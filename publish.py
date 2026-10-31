@@ -23,17 +23,18 @@ from pathlib import Path
 
 import requests
 
-from core import approval, config, http, ledger, meta, reddit_store
+from core import approval, config, http, ledger, meta, pinterest_auth, reddit_store
 from core.approval import ACTION_RE
-from channels import facebook, instagram
+from channels import facebook, instagram, pinterest
 
-CHANNELS = {instagram.CODE: instagram, facebook.CODE: facebook}
+CHANNELS = {instagram.CODE: instagram, facebook.CODE: facebook, pinterest.CODE: pinterest}
+META_CHANNELS = (instagram.CODE, facebook.CODE)
 
 REQUIRED_ENV = ["GITHUB_REPOSITORY", "GITHUB_REF_NAME", "RESEND_API_KEY", "RESEND_FROM", "RESEND_TO"]
 IG_ENV = ["ACCESS_TOKEN", "IG_USER_ID", "SHOPIFY_STORE_DOMAIN",
           "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "BIO_LINK_PATH"]
 FB_ENV = ["ACCESS_TOKEN", "IG_USER_ID"]  # IG_USER_ID only identifies the linked Page
-ENV_BY_CHANNEL = {instagram.CODE: IG_ENV, facebook.CODE: FB_ENV}
+ENV_BY_CHANNEL = {instagram.CODE: IG_ENV, facebook.CODE: FB_ENV, pinterest.CODE: pinterest_auth.REQUIRED_ENV}
 
 
 def parse_title(title):
@@ -50,7 +51,7 @@ def do_reject(article_id, channel):
     entry = ledger.get(data, article_id, channel)
     if not entry:
         return f"- `{channel}`: no draft found, nothing to reject."
-    if entry["status"] not in (ledger.DRAFT, ledger.APPROVED):
+    if entry["status"] not in (ledger.DRAFT, ledger.APPROVED, ledger.SCHEDULED):
         return f"- `{channel}`: status is `{entry['status']}`, left unchanged."
 
     def mutate(d):
@@ -234,8 +235,12 @@ def do_reddit(question_id):
             f"suggested posting day {weekday} {post_on.isoformat()}"), True
 
 
-def do_approve(article_id, channel):
-    """Returns (markdown line, ok). Raises on anything that blocks or breaks publishing."""
+def do_approve(article_id, channel, publish_now=False):
+    """Returns (markdown line, ok). Raises on anything that blocks or breaks publishing.
+
+    A Pinterest BACKFILL pin (ledger entry has a `batch`) is only SCHEDULED by an approval;
+    the daily job (pinterest_daily.py) publishes it on `publish_on`, at most PIN_DAILY_CAP a
+    day, by calling this with publish_now=True."""
     if channel == "reddit":
         return do_reddit(article_id)
     module = CHANNELS.get(channel)
@@ -248,6 +253,13 @@ def do_approve(article_id, channel):
         raise Blocked(f"No draft in the ledger for article {article_id} / {channel}.")
     if entry["status"] == ledger.PUBLISHED:
         return f"- `{channel}`: already published, nothing done → {entry['url']}", True
+    if entry["status"] == ledger.SCHEDULED and not publish_now:
+        return f"- `{channel}`: already scheduled for {entry.get('publish_on')}, nothing done", True
+    if entry["status"] == ledger.DRAFT and entry.get("batch") and not publish_now:
+        def schedule(d):
+            ledger.set_entry(d, article_id, channel, status=ledger.SCHEDULED, timestamp=ledger.now())
+        ledger.update(schedule, f"Schedule {article_id} ({channel}) for {entry.get('publish_on')} [skip ci]")
+        return f"- `{channel}`: approved, scheduled for {entry.get('publish_on')} (daily job publishes it)", True
     if entry["status"] == ledger.PUBLISHING:
         raise Blocked(
             "A previous run reached the publish call but never verified the post "
@@ -266,17 +278,20 @@ def do_approve(article_id, channel):
                              container_id=container_id, timestamp=ledger.now())
         ledger.update(mutate, f"Publishing {article_id} ({channel}) [skip ci]")
 
+    back_to = ledger.SCHEDULED if entry["status"] == ledger.SCHEDULED else ledger.DRAFT
+
     def revert_publishing():
         def mutate(d):
-            ledger.set_entry(d, article_id, channel, status=ledger.DRAFT, container_id=None,
+            ledger.set_entry(d, article_id, channel, status=back_to, container_id=None,
                              timestamp=ledger.now())
-        ledger.update(mutate, f"Publish refused for {article_id} ({channel}), back to draft [skip ci]")
+        ledger.update(mutate, f"Publish refused for {article_id} ({channel}), back to {back_to} [skip ci]")
 
     result = module.publish(draft, mark_publishing, revert_publishing)
 
     def mutate(d):
         ledger.set_entry(d, article_id, channel, status=ledger.PUBLISHED, post_id=result["post_id"],
-                         url=result["url"], timestamp=result["timestamp"] or ledger.now())
+                         url=result["url"], timestamp=result["timestamp"] or ledger.now(),
+                         published_on=ledger.now()[:10])
 
     ledger.update(mutate, f"Published {article_id} ({channel}) [skip ci]")
     line = f"- `{channel}`: published and verified → {result['url']}"
@@ -311,6 +326,19 @@ def main():
         write_result(f"❌ {exc}")
         sys.exit(1)
 
+    if action.endswith("-batch"):
+        # weekly Pinterest backfill: schedules/rejects every still-draft pin of the batch (no platform call)
+        approve = action == "approve-batch"
+        ids = [aid for aid, chs in ledger.load().items()
+               if not aid.startswith("_") and (chs.get("pin") or {}).get("batch") == article_id
+               and chs["pin"].get("status") in (ledger.DRAFT, ledger.SCHEDULED if not approve else ledger.DRAFT)]
+        results = []
+        for aid in ids:
+            results.append(do_approve(aid, "pin")[0] if approve else do_reject(aid, "pin"))
+        write_result(f"**{'Approve' if approve else 'Reject'} batch `{article_id}`**: {len(ids)} pin(s)\n\n"
+                     + "\n".join(f"- {aid}: {line.lstrip('- ')}" for aid, line in zip(ids, results)))
+        return
+
     name = label(article_id)
     lines, failed = [], False
     if action == "reject":
@@ -326,11 +354,15 @@ def main():
     if known:
         config.require_env(sorted({v for ch in known for v in ENV_BY_CHANNEL[ch]}))
         try:
-            # pages_manage_posts is required only when Facebook is part of this run
-            meta.preflight(meta.scopes_for(known))
-        except meta.TokenError as exc:
+            meta_known = [ch for ch in known if ch in META_CHANNELS]
+            if meta_known:
+                # pages_manage_posts is required only when Facebook is part of this run
+                meta.preflight(meta.scopes_for(meta_known))
+            if pinterest.CODE in known:
+                pinterest_auth.preflight()
+        except (meta.TokenError, pinterest_auth.PinterestAuthError) as exc:
             text = http.redact(exc)
-            approval.send_failure_email(f"Meta token check failed: {name}", text)
+            approval.send_failure_email(f"Token check failed: {name}", text)
             write_result(f"❌ **Not published.** {text}")
             sys.exit(1)
     for ch in channels:

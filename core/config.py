@@ -46,3 +46,13 @@ HOLD_ARTICLE_IDS = {
     "751689728333": "bamboo-tencel-down-pillow: claims about down pillows; catalog has no down products",
     "751536243021": "bedding-certification-meaning-explained: Down Pass section; catalog has no down products",
 }
+
+
+# --- Pinterest ---------------------------------------------------------------
+# The backfill (weekly drafts of all existing articles) and the daily scheduled
+# publisher stay OFF until Pinterest approves Standard access. New-article pins
+# (one per post, approved from the draft email) work on Trial as well.
+PINTEREST_STANDARD_ACCESS = False
+PIN_DAILY_CAP = 3          # max pins published per day (backfill schedule + daily publisher)
+PIN_WEEKLY_MAX = 21        # 3 per day x 7 days = one weekly backfill batch
+PIN_REFRESH_WARN_DAYS = 30  # email when the refresh token has fewer days left than this

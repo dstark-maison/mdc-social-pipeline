@@ -1,7 +1,7 @@
 # MDC social pipeline (`dstark-maison/mdc-social-pipeline`, formerly `mdc-instagram-pipeline`)
 
 Blog post → social copy → **one Resend approval email** → publish → verified in a ledger.
-Instagram and Facebook (German copy for both) ship together from one approval; Pinterest and Reddit follow the same three steps.
+Instagram and Facebook (German copy for both) ship together from one approval; Pinterest (German) has its own email; Reddit follows the same three steps.
 
 ## Flow
 
@@ -81,6 +81,34 @@ tracks, you post by hand.
   any GitHub user). The ledger holds only `status`, a 16-character hash of the question (for dedupe), the batch date and, later,
   the post id / url. A draft can be approved for 90 days; after that its artifact is gone and the question must be re-drafted.
   Note: a workflow_dispatch input is shown on the public run page.
+
+## Pinterest (German only)
+
+- **New posts:** the draft run also creates a pin per article, with its **own email** (Approve / Reject) sent in the same run
+  as the IG/FB email. A Pinterest problem never blocks IG/FB, and vice versa; each part has its own failure email.
+- `channels/pinterest.py`: `POST /v5/pins` with `board_id`, the 1000x1500 image URL, `title` (<=100), `description` (<=500,
+  keyword-led German, `core/pin_copy.py`) and the link with `utm_source=pinterest&utm_medium=social&utm_campaign={handle}`;
+  read back by id (board, title, link must match) before the ledger says `published`.
+- **Image** (`core/pin_image.py`): the article image cover-cropped to 2:3 with the title on a Paper `#FAF9F7` card in
+  Cormorant Garamond and a Jost wordmark (SIL OFL fonts in `assets/fonts/`).
+- **Boards** (`config/pinterest_boards.json`): ordered rules on the article handle map the topic to one of the five boards
+  (`Bambus-Bettwäsche`, `Tencel-Bettwäsche`, `Daunendecken`, `Betten & Schlafzimmer`, `Schlafwissen`); `overrides` pin single
+  articles. Board ids are resolved by exact name via the API at runtime, never stored.
+- **Draft only some channels:** *Social Draft* has a `channels` input (`pin`, `ig,fb`, ...), e.g. `article_id=...` + `channels=pin`.
+- **Trial access** creates Sandbox pins visible only to the app owner; `PINTEREST_API_BASE` can point at the sandbox host.
+
+### Pinterest tokens (no manual renewals)
+One-time OAuth (`tools/pinterest_oauth.py`, scopes `boards:read pins:read pins:write user_accounts:read`) puts the refresh token in
+the secret `PINTEREST_REFRESH_TOKEN`. From then on the pipeline refreshes access tokens itself (`core/pinterest_auth.py`), at the
+start of every Pinterest run and weekly (*Social Pinterest Token*). If Pinterest rotates the refresh token, the new one is stored
+**encrypted** in `state/pinterest_token.json` (key = secret `PINTEREST_STATE_KEY`; a workflow cannot rewrite a secret). An email goes
+out 30 days before the refresh token expires (at most weekly); a failed refresh is a failure email.
+
+### Backfill (OFF until Standard access)
+`config.PINTEREST_STANDARD_ACCESS = False` keeps `backfill.py` and `pinterest_daily.py` inert. Once approved and set to `True`:
+every Monday ONE email lists that week's batch (up to 21 pins, 3 per day, newest articles first, held articles never included),
+with **Approve all / Reject all** (`approve-batch:YYYYMMDD:pin`) or per pin. Approving only *schedules* a pin (`status scheduled`,
+`publish_on`); the daily job publishes at most 3 per day. A new batch waits until the previous one is finished.
 
 ## Drafts stay approvable indefinitely
 

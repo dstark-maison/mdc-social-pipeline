@@ -1,21 +1,22 @@
 """
-Maison de Cocon — social draft stage (Instagram + Facebook).
+Maison de Cocon — social draft stage (Instagram + Facebook + Pinterest).
 
 Two ways in:
   * scheduled (cron): articles PUBLISHED AFTER config.DRAFT_CUTOFF that have no
     ledger entry and are not on config.HOLD_ARTICLE_IDS
-  * on request (workflow_dispatch, env ARTICLE_ID = numeric Shopify id): that
-    one article, whatever its age. Still refuses held articles, and never
-    re-drafts a channel that is already published / mid-publish.
+  * on request (workflow_dispatch, env ARTICLE_ID = numeric Shopify id, optional
+    DRAFT_CHANNELS = "ig,fb,pin" subset): that one article, whatever its age. Still
+    refuses held articles, and never re-drafts a channel that is already published,
+    scheduled or mid-publish.
 
 For each article:
-  1. generate the German copy with Claude (the Instagram caption)
-  2. crop the featured image to 1:1 and push it (public raw URL, no hosting)
-  3. derive the Facebook message from the caption (clickable UTM link, fewer hashtags)
-  4. save both drafts + both ledger entries (status `draft`) in ONE commit
-  5. send ONE approval email: IG + FB previews, Approve both / IG only / FB only / Reject
+  1. IG + FB (German): copy once, 1:1 image, both drafts + both ledger entries in ONE
+     commit, ONE approval email (Approve both / IG only / FB only / Reject)
+  2. Pinterest (German): keyword-led copy, topic board, 1000x1500 image with the title,
+     its OWN draft + ledger entry + its OWN approval email (Approve / Reject)
 
-Nothing is created on any platform at draft time.
+A Pinterest problem never blocks IG/FB (and vice versa): each part has its own failure
+email. Nothing is created on any platform at draft time.
 """
 
 import os
@@ -23,17 +24,31 @@ import re
 import sys
 from pathlib import Path
 
-from core import approval, blog, config, copy, image, ledger, meta
-from channels import facebook, instagram
+from core import approval, blog, config, copy, image, ledger, meta, pin_draft, pinterest_auth
+from channels import facebook, instagram, pinterest
 
-REQUIRED_ENV = [
+BASE_ENV = [
     "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET",
-    "SHOPIFY_BLOG_HANDLE", "ANTHROPIC_API_KEY", "ACCESS_TOKEN",
+    "SHOPIFY_BLOG_HANDLE", "ANTHROPIC_API_KEY",
     "RESEND_API_KEY", "RESEND_FROM", "RESEND_TO",
     "GITHUB_REPOSITORY", "GITHUB_REF_NAME",
 ]
-CHANNELS = (instagram.CODE, facebook.CODE)
-APPROVABLE_COMBOS = ("ig", "fb", "ig+fb")  # what an approval title accepts
+META_ENV = ["ACCESS_TOKEN"]
+REQUIRED_ENV = BASE_ENV + META_ENV  # kept for callers/tests: the default run includes IG + FB
+SOCIAL = (instagram.CODE, facebook.CODE)
+CHANNELS = SOCIAL                       # the IG + FB email
+ALL_CHANNELS = SOCIAL + (pinterest.CODE,)
+APPROVABLE_COMBOS = ("ig", "fb", "ig+fb")  # what an approval title accepts for the pending list
+LOCKED = (ledger.PUBLISHED, ledger.PUBLISHING, ledger.SCHEDULED)
+
+
+def requested_channels(value=None):
+    raw = os.environ.get("DRAFT_CHANNELS", "") if value is None else value
+    wanted = [c.strip() for c in raw.replace("+", ",").split(",") if c.strip()] or list(ALL_CHANNELS)
+    unknown = [c for c in wanted if c not in ALL_CHANNELS]
+    if unknown:
+        raise ValueError(f"Unknown channel(s) {unknown}; allowed: {list(ALL_CHANNELS)}")
+    return [c for c in ALL_CHANNELS if c in wanted]
 
 
 def select_new_articles(articles, ledger_data, cutoff=None, hold=None):
@@ -50,26 +65,27 @@ def select_new_articles(articles, ledger_data, cutoff=None, hold=None):
     return picked
 
 
-def channels_to_draft(article_id, ledger_data):
-    """Channels that may be (re-)drafted: not already published or mid-publish."""
-    return [c for c in CHANNELS
-            if (ledger.get(ledger_data, article_id, c) or {}).get("status")
-            not in (ledger.PUBLISHED, ledger.PUBLISHING)]
+def channels_to_draft(article_id, ledger_data, requested=ALL_CHANNELS):
+    """Requested channels that may be (re-)drafted: not already published, scheduled or mid-publish."""
+    return [c for c in ALL_CHANNELS if c in requested
+            and (ledger.get(ledger_data, article_id, c) or {}).get("status") not in LOCKED]
 
 
-def check_explicit(article_id, article, ledger_data, hold=None):
+def check_explicit(article_id, article, ledger_data, hold=None, requested=ALL_CHANNELS):
     """Raises if an on-request draft must not go ahead; returns the channels to draft."""
     hold = config.HOLD_ARTICLE_IDS if hold is None else hold
     if article_id in hold:
         raise RuntimeError(f"Article {article_id} is on hold: {hold[article_id]}")
     if not article["isPublished"]:
         raise RuntimeError(f"Article {article_id} is not published")
-    channels = channels_to_draft(article_id, ledger_data)
+    channels = channels_to_draft(article_id, ledger_data, requested)
     if not channels:
-        raise RuntimeError(f"Article {article_id} is already published (or mid-publish) on every channel; "
-                           "not drafting again")
+        raise RuntimeError(f"Article {article_id} is already published/scheduled (or mid-publish) on every "
+                           f"requested channel; not drafting again")
     return channels
 
+
+# --- Instagram + Facebook -----------------------------------------------------
 
 def build_drafts(article, model, channels):
     """Copy + image once, then one draft per channel. Returns {channel: draft}."""
@@ -110,12 +126,12 @@ def buttons_for(channels):
     return [("Approve", "approve", channels[0]), ("Reject", "reject", channels[0])]
 
 
-def process(article, model, channels=CHANNELS):
-    """Draft one article. Order matters: persist FIRST, email SECOND, so an email
+def process(article, model, channels=SOCIAL):
+    """Draft one article for IG/FB. Order matters: persist FIRST, email SECOND, so an email
     can never point at content that was not saved. Re-drafting the same article
     replaces its drafts (same approval links); other articles are untouched."""
     article_id = ledger.numeric_id(article["id"])
-    channels = [c for c in CHANNELS if c in channels]
+    channels = [c for c in SOCIAL if c in channels]
     drafts = build_drafts(article, model, channels)
 
     def mutate(data):
@@ -142,22 +158,53 @@ def process(article, model, channels=CHANNELS):
     )
 
 
+# --- Pinterest ------------------------------------------------------------------
+
+def process_pin(article, model):
+    """Draft one article's pin: own copy/image/board, own ledger entry, own email."""
+    article_id = ledger.numeric_id(article["id"])
+    pinterest_auth.preflight()  # refresh works, scopes granted, 30-day expiry warning
+    draft, image_path = pin_draft.build(article, model)
+    ledger.commit_and_push([image_path], f"Add pin image for {article_id} ({article['handle']}) [skip ci]")
+
+    def mutate(data):
+        ledger.set_entry(
+            data, article_id, pinterest.CODE,
+            status=ledger.DRAFT, article_id=article_id, handle=article["handle"],
+            post_id=None, url=None, container_id=None, batch=None, publish_on=None,
+            timestamp=ledger.now(),
+        )
+
+    ledger.update(mutate, f"Draft {article_id} ({article['handle']}, pin) [skip ci]",
+                  {ledger.draft_path(article_id, pinterest.CODE): ledger.draft_text(draft)})
+    approval.send_pin_email({**article, "article_id": article_id}, draft, config.public_raw_url(draft["image_path"]))
+
+
+# --- main -----------------------------------------------------------------------
+
 def main():
-    config.require_env(REQUIRED_ENV)
+    try:
+        wanted = requested_channels()
+    except ValueError as exc:
+        print(exc)
+        sys.exit(1)
+    social_wanted = [c for c in wanted if c in SOCIAL]
+    config.require_env(BASE_ENV + (META_ENV if social_wanted else []))
     model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
     target = os.environ.get("ARTICLE_ID", "").strip()
 
     try:
-        # every draft run includes Facebook, so pages_manage_posts is required here
-        meta.preflight(meta.scopes_for(CHANNELS))
+        if social_wanted:
+            # a default draft run includes Facebook, so pages_manage_posts is required then
+            meta.preflight(meta.scopes_for(social_wanted))
         if target:
             if not re.fullmatch(r"[0-9]+", target):
                 raise ValueError(f"article_id must be the NUMERIC Shopify id, got {target!r}")
             article = blog.fetch_article(target)
-            queue = [(article, check_explicit(target, article, ledger.load()))]
+            queue = [(article, check_explicit(target, article, ledger.load(), requested=wanted))]
         else:
             articles = blog.fetch_recent_articles(os.environ["SHOPIFY_BLOG_HANDLE"])
-            queue = [(a, list(CHANNELS)) for a in select_new_articles(articles, ledger.load())]
+            queue = [(a, list(wanted)) for a in select_new_articles(articles, ledger.load())]
     except Exception as exc:
         print(f"Cannot start: {exc}")
         approval.send_failure_email(f"Draft not started (article_id={target or 'cron'})", str(exc))
@@ -168,23 +215,31 @@ def main():
         return
 
     failures = []
-    for article, channels in queue:
-        print(f"Drafting for: {article['title']} ({'+'.join(channels)})")
+
+    def attempt(label, article, fn, *args):
         try:
-            process(article, model, channels)
-            print("  Drafts saved, approval email sent.")
+            fn(article, model, *args)
+            print(f"  {label}: drafts saved, approval email sent.")
         except Exception as exc:
-            # One article must not block the rest. No ledger entry is written,
-            # so it is retried next run.
-            print(f"  FAILED to draft '{article['title']}': {exc}")
-            failures.append((article["title"], exc))
+            # One part must not block the others, and one article must not block the rest.
+            # No ledger entry is written for the failed part, so it is retried next run.
+            print(f"  {label}: FAILED to draft '{article['title']}': {exc}")
+            failures.append((label, article["title"], exc))
             try:
-                approval.send_failure_email(f"Draft failed: {article['title']}", str(exc))
+                approval.send_failure_email(f"Draft failed ({label}): {article['title']}", str(exc))
             except Exception as mail_exc:
                 print(f"  (failure email also failed: {mail_exc})")
 
+    for article, channels in queue:
+        print(f"Drafting for: {article['title']} ({'+'.join(channels)})")
+        social = [c for c in channels if c in SOCIAL]
+        if social:
+            attempt("IG/FB", article, process, social)
+        if pinterest.CODE in channels:
+            attempt("Pinterest", article, process_pin)
+
     if failures:
-        print(f"\n{len(failures)} article(s) failed to draft")
+        print(f"\n{len(failures)} draft part(s) failed")
         sys.exit(1)
 
 
