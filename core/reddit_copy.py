@@ -140,15 +140,47 @@ def finalize(raw, lang, link):
             "link_dropped": link_dropped}
 
 
+MAX_TOKENS = 3500  # thinking + a 300-word German post; 1400 was cut off on long articles
+JSON_REMINDER = ("\n\nReply with ONLY one valid JSON object (double quotes, newlines written as \\n inside strings), "
+                 "no text before or after it.")
+
+
+def parse_model_json(text):
+    """Tolerant parse of the model's JSON reply: code fences and extra prose around the object are ignored and raw
+    newlines inside strings are accepted. Raises ValueError (no content in the message) if there is no usable object."""
+    t = (text or "").strip()
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
+    candidates = [t]
+    if "{" in t and "}" in t:
+        candidates.append(t[t.index("{"):t.rindex("}") + 1])
+    for c in candidates:
+        try:
+            obj = json.loads(c, strict=False)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and obj.get("body"):
+            return obj
+    raise ValueError(f"model reply is not usable JSON (length {len(t)}, ends with a closing brace: {t.endswith('}')})")
+
+
+def _ask(prompt, lang, link, model):
+    """One model call -> finalized draft. If the reply is not usable JSON, ask once more with a strict reminder."""
+    try:
+        return finalize(parse_model_json(copy._call_claude(_system(lang), prompt, model, max_tokens=MAX_TOKENS)), lang, link)
+    except ValueError:
+        return finalize(parse_model_json(copy._call_claude(_system(lang), prompt + JSON_REMINDER, model, max_tokens=MAX_TOKENS)),
+                        lang, link)
+
+
 def generate(question, lang, source, link, model):
     """-> {title, body, unsupported, link_dropped, flags}"""
     prompt = build_prompt(question, source)
-    draft = finalize(json.loads(copy._call_claude(_system(lang), prompt, model, max_tokens=1400)), lang, link)
+    draft = _ask(prompt, lang, link, model)
     hits = meta_hits(draft["body"])
     if hits:  # one corrective retry; anything still left is flagged for the owner
         retry = (prompt + "\n\nYour previous draft talked about its sources or about what you can/cannot see "
                  f"({'; '.join(hits)}). Rewrite the post WITHOUT any such wording: leave uncovered parts out, "
                  "or say plainly that it depends. Same JSON format.")
-        draft = finalize(json.loads(copy._call_claude(_system(lang), retry, model, max_tokens=1400)), lang, link)
+        draft = _ask(retry, lang, link, model)
     draft["flags"] = flags_for(draft, source, has_article=bool(source))
     return draft
