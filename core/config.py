@@ -19,7 +19,8 @@ def public_raw_url(repo_path):
 
 # --- Reddit (r/MaisonDeCocon) ---------------------------------------------------
 REDDIT_SUBREDDIT = "MaisonDeCocon"
-REDDIT_DRAFTS_PER_WEEK = 5
+REDDIT_DRAFTS_PER_WEEK = 5      # max new drafts per run
+REDDIT_MAX_OPEN = 5             # weekly run tops up to this many UNPOSTED drafts (pending + approved-not-posted)
 REDDIT_MIN_IMPRESSIONS = 3      # Search Console question queries below this are noise (tiny site)
 REDDIT_MAX_FROM_GSC = 3         # slots: GSC first, then the pasted findquestions list, then blog FAQ blocks
 REDDIT_MAX_FROM_PASTED = 2

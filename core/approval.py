@@ -126,9 +126,12 @@ def _source_line(d):
     return "FAQ block of the matching blog article"
 
 
-def send_reddit_draft_email(d):
+def send_reddit_draft_email(d, redraft=False):
     """One review email per Reddit draft (Approve / Reject). d is the draft dict (see reddit_draft.py)."""
     e = html.escape
+    note = ('<p style="background:#e8f1fb;border:1px solid #9bbbe0;padding:8px 12px;font-family:sans-serif">'
+            "<strong>Re-draft</strong> with the updated prompt. It replaces the earlier version of this draft; "
+            "the Approve link is the same.</p>") if redraft else ""
     flags = "".join(f"<li>{e(f)}</li>" for f in d["flags"])
     flag_block = (f'<div style="background:#fff3cd;border:1px solid #e0c36a;padding:10px 14px;margin:12px 0">'
                   f'<strong>Check before approving</strong><ul style="margin:6px 0 0">{flags}</ul></div>') if flags else (
@@ -137,6 +140,7 @@ def send_reddit_draft_email(d):
     btns = (_button("Approve", approval_link("approve", d["id"], "reddit"), "#2e6b3a")
             + _button("Reject", approval_link("reject", d["id"], "reddit"), "#8a2f2f"))
     body = f"""
+    {note}
     <h2>Reddit draft: {e(d['question'])}</h2>
     <p style="color:#666;font-family:sans-serif">Language: <strong>{e(d['lang'].upper())}</strong> &middot;
        Source: {e(_source_line(d))}<br>
@@ -150,13 +154,16 @@ def send_reddit_draft_email(d):
     <p style="color:#666;font-size:12px">Approve sends you a copy-ready email with a suggested posting day. Nothing is posted
     for you: Reddit's API is closed, so you post it by hand to r/{e(config.REDDIT_SUBREDDIT)} and send the URL back.</p>
     """
-    _send(f"Reddit draft (EN/DE: {d['lang'].upper()}): {d['question'][:80]}", body)
+    _send(f"Reddit {'RE-DRAFT' if redraft else 'draft'} ({d['lang'].upper()}): {d['question'][:80]}", body)
 
 
 def send_reddit_ready_email(d, post_on, weekday):
     """After Approve: title + body ready to copy, the suggested day, how to report the URL."""
     e = html.escape
+    from core import reddit_copy  # lazy: keeps approval importable on its own
     repo = os.environ["GITHUB_REPOSITORY"]
+    if not reddit_copy.needs_disclosure():  # older drafts may still carry the disclosure line: never in our own subreddit
+        d = {**d, "body": reddit_copy.strip_disclosure(d["body"])}
     body = f"""
     <h2>Ready to post: r/{e(config.REDDIT_SUBREDDIT)}</h2>
     <p style="font-family:sans-serif"><strong>Suggested posting day: {e(weekday)} {e(post_on)}</strong>
@@ -173,3 +180,36 @@ def send_reddit_ready_email(d, post_on, weekday):
     The ledger then marks it published.</p>
     """
     _send(f"Ready to post ({weekday} {post_on}): {d['title'][:80]}", body)
+
+
+def send_reddit_skip_email(pending, approved, limit):
+    """Short note when the weekly Reddit run is skipped because the open list is already full."""
+    e = html.escape
+    _send(
+        f"Reddit weekly run skipped: {len(pending) + len(approved)} of {limit} drafts still open",
+        f"<h2>Reddit: no new drafts this week</h2>"
+        f"<p style='font-family:sans-serif'>{len(pending) + len(approved)} unposted drafts are already open "
+        f"(limit {limit}): <strong>{len(pending)} pending approval</strong>, "
+        f"<strong>{len(approved)} approved but not posted yet</strong>.</p>"
+        f"<p style='font-family:sans-serif'>Pending: {e(', '.join(pending) or 'none')}<br>"
+        f"Approved: {e(', '.join(approved) or 'none')}</p>"
+        f"<p style='color:#666;font-family:sans-serif'>A slot frees up when you reject a draft or post an approved one "
+        f"(send its URL via Social Publish). The next Monday run tops the list up again.</p>",
+    )
+
+
+def send_reddit_published_email(url, info):
+    """The ONE short confirmation after the owner submitted the URL of a post."""
+    e = html.escape
+    sub = config.REDDIT_SUBREDDIT
+    article = ""
+    if info.get("article_title"):
+        article = (f"<p style='font-family:sans-serif'>Article: <a href=\"{e(info.get('article_link') or '#', quote=True)}\">"
+                   f"{e(info['article_title'])}</a></p>")
+    _send(
+        f"Published on r/{sub}",
+        f"<h2>Published on r/{e(sub)}</h2>"
+        f"<p style='font-family:sans-serif'><a href=\"{e(url, quote=True)}\">{e(url)}</a></p>{article}"
+        f"<p style='color:#666;font-size:12px;font-family:sans-serif'>Recorded in the ledger from the URL you sent "
+        f"(Reddit cannot be read back).</p>",
+    )

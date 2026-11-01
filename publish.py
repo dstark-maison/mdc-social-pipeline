@@ -17,8 +17,11 @@ the approval issue. Any failure also sends a failure email with the raw error.
 import os
 import re
 import sys
+from urllib.parse import urljoin
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+import requests
 
 from core import approval, config, http, ledger, meta, reddit_store
 from core.approval import ACTION_RE
@@ -70,14 +73,69 @@ def label(article_id):
 # --- Reddit: manual publishing (no Reddit API) -------------------------------------
 # approve -> copy-ready email; the owner posts by hand and submits the URL -> published.
 # The approval issue comment and the ledger never contain the draft text.
-REDDIT_URL_RE = re.compile(
-    r"https://(?:www\.|old\.|new\.)?reddit\.com/r/" + config.REDDIT_SUBREDDIT + r"/comments/([a-z0-9]{5,10})(?:/[^\s?#]*)?", re.I)
+_REDDIT_HOST = r"(?:www\.|old\.|new\.|np\.|m\.)?reddit\.com"
+_REDDIT_BASE = r"https://" + _REDDIT_HOST + r"/r/" + config.REDDIT_SUBREDDIT
+REDDIT_POST_RE = re.compile(_REDDIT_BASE + r"/comments/([a-z0-9]{5,10})(?:/[^\s?#]*)?", re.I)   # slug / trailing slash optional
+REDDIT_SHARE_RE = re.compile(_REDDIT_BASE + r"/s/([A-Za-z0-9]{5,20})/?", re.I)                    # Reddit "share" links
+REDDIT_HOST_RE = re.compile(r"https://" + _REDDIT_HOST + r"(?:/|$)", re.I)
+SHARE_UA = "Mozilla/5.0 (compatible; mdc-social-pipeline/1.0)"
+
+
+class ShareResolveError(RuntimeError):
+    pass
+
+
+def _clean_url(url):
+    """Trim blanks, drop the query string and fragment (utm/share parameters are irrelevant)."""
+    return (url or "").strip().split("?")[0].split("#")[0]
 
 
 def reddit_post_id(url):
-    """Post id from a r/MaisonDeCocon post URL (query string / fragment ignored), or None."""
-    m = REDDIT_URL_RE.fullmatch((url or "").strip().split("?")[0].split("#")[0])
+    """Post id from a post URL (with or without slug, trailing slash, query; www/old/new/np/m), or None."""
+    m = REDDIT_POST_RE.fullmatch(_clean_url(url))
     return m.group(1).lower() if m else None
+
+
+def reddit_share_id(url):
+    m = REDDIT_SHARE_RE.fullmatch(_clean_url(url))
+    return m.group(1) if m else None
+
+
+def resolve_share(url, max_hops=5):
+    """Follow a /r/<sub>/s/<id> share link's HTTP redirects (a plain redirect lookup, NOT the Reddit API) to the
+    canonical post id. Only reddit.com hosts are ever contacted. Raises ShareResolveError."""
+    current = url.strip()
+    for _ in range(max_hops):
+        if not REDDIT_HOST_RE.match(current):
+            raise ShareResolveError("the link redirects away from reddit.com")
+        try:
+            resp = requests.get(current, allow_redirects=False, timeout=20, headers={"User-Agent": SHARE_UA})
+        except requests.RequestException as exc:
+            raise ShareResolveError(f"Reddit could not be reached ({type(exc).__name__})") from None
+        location = resp.headers.get("Location")
+        if resp.status_code in (301, 302, 303, 307, 308) and location:
+            current = urljoin(current, location)
+            post_id = reddit_post_id(current)
+            if post_id:
+                return post_id
+            continue
+        raise ShareResolveError(f"Reddit answered HTTP {resp.status_code} without a redirect "
+                                f"(it may block automated lookups)")
+    raise ShareResolveError("too many redirects")
+
+
+def reddit_resubmit_help(question_id, reason):
+    """The failure text for an unusable URL: says what to do and lists the exact form inputs."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "dstark-maison/mdc-social-pipeline")
+    return (f"Re-submit with the full URL.\n\nWhy it failed: {reason}\n\n"
+            f"Open the post on Reddit and copy its full address from the browser's address bar "
+            f"(https://www.reddit.com/r/{config.REDDIT_SUBREDDIT}/comments/<id>/<title>/). Then:\n"
+            f"Actions -> Social Publish -> Run workflow: https://github.com/{repo}/actions/workflows/social-publish.yml\n\n"
+            f"Exact form inputs:\n"
+            f"  article: {question_id}\n"
+            f"  channel: reddit\n"
+            f"  url: <the full address-bar URL of the post>\n"
+            f"  test_bad_token: leave unchecked")
 
 
 def suggest_day(data, today=None):
@@ -105,20 +163,40 @@ def do_reddit(question_id):
     url = os.environ.get("REDDIT_URL", "").strip()
 
     if url:
-        post_id = reddit_post_id(url)
-        if not post_id:
-            raise Blocked(f"The URL must be a post in r/{config.REDDIT_SUBREDDIT} "
-                          f"(https://www.reddit.com/r/{config.REDDIT_SUBREDDIT}/comments/<id>/...); got {url!r}")
-        canonical = f"https://www.reddit.com/r/{config.REDDIT_SUBREDDIT}/comments/{post_id}/"
-        if entry["status"] == ledger.PUBLISHED:
+        if entry["status"] == ledger.PUBLISHED:  # a re-submit is a no-op: no resolution, no second email
             return f"- `reddit`: already published, nothing done → {entry['url']}", True
         if entry["status"] != ledger.APPROVED:
             raise Blocked(f"Draft {question_id} is `{entry['status']}`: approve it first, then submit the URL.")
+        post_id = reddit_post_id(url)
+        if not post_id and reddit_share_id(url):
+            try:
+                post_id = resolve_share(url)
+            except ShareResolveError as exc:
+                raise Blocked(reddit_resubmit_help(
+                    question_id, f"the share link could not be turned into the post URL ({exc}). "
+                                 f"Please paste the address-bar URL of the post instead of the share link."))
+        if not post_id:
+            raise Blocked(reddit_resubmit_help(
+                question_id, f"{url!r} is not a post URL in r/{config.REDDIT_SUBREDDIT} "
+                             f"(accepted: .../comments/<id>/..., old.reddit.com, or a /s/<id> share link)"))
+        canonical = f"https://www.reddit.com/r/{config.REDDIT_SUBREDDIT}/comments/{post_id}/"
 
         def published(d):
             ledger.set_entry(d, question_id, "reddit", status=ledger.PUBLISHED, post_id=post_id, url=canonical,
                              timestamp=ledger.now(), published_on=ledger.now()[:10])
         ledger.update(published, f"Reddit {question_id} posted [skip ci]")
+        info = {}
+        try:  # article title for the confirmation; not essential
+            batch = reddit_store.load_batch(reddit_store.batch_id_of(question_id))
+            d = next((x for x in (batch or {}).get("drafts", []) if x["id"] == question_id), None)
+            if d:
+                info = {"article_title": d.get("article_title"), "article_link": d.get("link")}
+        except Exception:
+            pass
+        try:  # exactly ONE short confirmation, only on this transition
+            approval.send_reddit_published_email(canonical, info)
+        except Exception as exc:
+            print(f"  (confirmation email failed: {type(exc).__name__})")
         return (f"- `reddit`: marked published → {canonical} "
                 f"(recorded from the URL you gave; Reddit cannot be read back, its API is closed)"), True
 

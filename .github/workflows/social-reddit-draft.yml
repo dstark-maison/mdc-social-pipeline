@@ -1,4 +1,5 @@
-# Weekly Reddit drafts for r/MaisonDeCocon (Monday cron + manual run).
+# Weekly Reddit drafts for r/MaisonDeCocon (Monday cron + manual run). Tops the list up to 5 unposted drafts
+# (pending + approved-not-posted); with 5 already open the run is skipped with a short email.
 # PRIVACY: this repo is public. Search Console data, the pasted findquestions list and the drafts are
 # never committed and never printed; they live in ENCRYPTED artifacts (90 days, key = secret
 # REDDIT_ARTIFACT_KEY). The ledger gets only status + a short question hash.
@@ -14,6 +15,10 @@ on:
     inputs:
       questions:
         description: "Optional: this week's findquestions.com list. One question per line, or separate with | or ?"
+        required: false
+        type: string
+      redraft:
+        description: "Optional: re-draft pending drafts of one batch with the current prompt: one id (202610311), several (202610311,202610312) or the word pending. Approved drafts and all others stay as they are."
         required: false
         type: string
 
@@ -53,6 +58,7 @@ jobs:
           REDDIT_ARTIFACT_KEY: ${{ secrets.REDDIT_ARTIFACT_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
           QUESTIONS: ${{ inputs.questions }}
+          REDRAFT_ID: ${{ inputs.redraft }}
         run: python reddit_draft.py
 
       # Uploaded even if the job failed half-way: the emails may already be out. Files are encrypted.

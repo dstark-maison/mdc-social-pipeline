@@ -10,7 +10,8 @@ Inputs (all three; a missing one is reported, never replaced by old data):
 Held articles (config.HOLD_ARTICLE_IDS) are never a link target or fact source. Questions
 already in the ledger (drafted, approved, published or rejected) are skipped (hash match).
 
-Picks 5 questions with distinct articles: up to 3 from Search Console, up to 2 pasted, the
+Tops the open list up to config.REDDIT_MAX_OPEN (5) unposted drafts (pending + approved-but-not-posted); if 5
+are already open the run is skipped with a short email. Picks the missing questions with distinct articles: up to 3 from Search Console, up to 2 pasted, the
 rest from FAQ blocks (shortfalls are filled in that priority order). One draft per question,
 one review email per draft (Approve / Reject).
 
@@ -124,6 +125,66 @@ def build_draft(cand, index_by_id, draft_id, model):
             "flags": out["flags"], "created": ledger.now()}
 
 
+def open_drafts(ledger_data):
+    """Unposted Reddit drafts: (pending ids, approved-but-not-posted ids). Rejected and published do not count."""
+    pending, approved = [], []
+    for key, chs in sorted(ledger_data.items()):
+        e = chs.get("reddit") if isinstance(chs, dict) else None
+        if e and e.get("status") == ledger.DRAFT:
+            pending.append(key)
+        elif e and e.get("status") == ledger.APPROVED:
+            approved.append(key)
+    return pending, approved
+
+
+def redraft_many(ids, model):
+    """Re-draft pending drafts of ONE batch with the current prompt. Same ids, questions, articles and links
+    (the existing approval links keep working and now approve the new version). Drafts that are not in `ids`
+    (e.g. approved ones) are left exactly as they are. One new email per re-drafted draft."""
+    if not ids:
+        raise RuntimeError("No pending Reddit drafts to re-draft")
+    data = ledger.load()
+    for did in ids:
+        entry = ledger.get(data, did, "reddit")
+        if not entry:
+            raise RuntimeError(f"No Reddit draft with id {did}")
+        if entry["status"] != ledger.DRAFT:
+            raise RuntimeError(f"Draft {did} is `{entry['status']}`: only drafts that are still pending can be re-drafted")
+    batches = {reddit_store.batch_id_of(i) for i in ids}
+    if len(batches) != 1:
+        raise RuntimeError(f"Re-draft one batch at a time (got batches {sorted(batches)})")
+    batch = batches.pop()
+    payload = reddit_store.load_batch(batch)
+    if payload is None:
+        raise RuntimeError(f"The encrypted artifact of batch {batch} is gone (90-day retention)")
+    by_id = {d["id"]: d for d in payload["drafts"]}
+    index = {a["id"]: a for a in ra.fetch_index(os.environ["SHOPIFY_BLOG_HANDLE"])}
+    done, failed = {}, []
+    for did in ids:
+        old = by_id.get(did)
+        art = index.get(old["article_id"]) if old else None
+        try:
+            if old is None:
+                raise RuntimeError("not in the batch artifact")
+            if art is None or not art["published"] or art["id"] in config.HOLD_ARTICLE_IDS:
+                raise RuntimeError("the matching article is no longer an eligible fact source (unpublished or held)")
+            out = reddit_copy.generate(old["question"], old["lang"], ra.source_text(art), old["link"], model)
+            done[did] = {**old, "title": out["title"], "body": out["body"], "flags": out["flags"], "redrafted": ledger.now()}
+        except Exception as exc:
+            failed.append((did, http.redact(exc)))
+            print(f"  re-draft of {did} failed: {type(exc).__name__}")
+    if done:
+        reddit_store.write("batch", {"batch": batch, "drafts": [done.get(d["id"], d) for d in payload["drafts"]]})
+        write_output("batch", batch)
+        for did in ids:
+            if did in done:
+                approval.send_reddit_draft_email(done[did], redraft=True)
+    print(f"Re-drafted {len(done)} of {len(ids)} draft(s) in batch {batch}; the other {len(payload['drafts']) - len(done)} "
+          f"draft(s) in the batch are untouched; {sum(bool(d['flags']) for d in done.values())} with flags.")
+    if failed:
+        raise RuntimeError("Re-draft failed for: " + "; ".join(f"{i} ({m})" for i, m in failed))
+
+
 def write_output(name, value):
     path = os.environ.get("GITHUB_OUTPUT")
     if path:
@@ -134,10 +195,33 @@ def write_output(name, value):
 def main(today=None):
     config.require_env(BASE_ENV)
     model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+    redraft_id = os.environ.get("REDRAFT_ID", "").strip()
+    if redraft_id:
+        try:
+            if redraft_id.lower() == "pending":  # every draft that is still waiting for approval
+                ids = open_drafts(ledger.load())[0]
+            else:
+                ids = [x.strip() for x in redraft_id.replace(";", ",").split(",") if x.strip()]
+            redraft_many(ids, model)
+        except Exception as exc:
+            print(f"Re-draft failed: {type(exc).__name__}")
+            approval.send_failure_email(f"Reddit re-draft failed: {redraft_id}", http.redact(exc))
+            sys.exit(1)
+        return
     today = today or datetime.now(timezone.utc).date()
     batch = today.strftime("%Y%m%d")
     hold = config.HOLD_ARTICLE_IDS
     pasted_text = os.environ.get("QUESTIONS", "")
+
+    # Top up to REDDIT_MAX_OPEN unposted drafts instead of always drafting 5.
+    pending, approved = open_drafts(ledger.load())
+    capacity = config.REDDIT_MAX_OPEN - len(pending) - len(approved)
+    if capacity <= 0:
+        print(f"Skipped: {len(pending) + len(approved)} unposted drafts already open "
+              f"({len(pending)} pending, {len(approved)} approved, not posted yet).")
+        approval.send_reddit_skip_email(pending, approved, config.REDDIT_MAX_OPEN)
+        return
+    print(f"Open drafts: {len(pending)} pending + {len(approved)} approved-not-posted; drafting up to {capacity}.")
 
     index = ra.fetch_index(os.environ["SHOPIFY_BLOG_HANDLE"])
     index_by_id = {a["id"]: a for a in index}
@@ -182,7 +266,7 @@ def main(today=None):
     skip = set(seen)
     failures = []
     for _ in range(3):  # replacement rounds if a draft cannot be generated
-        wanted = config.REDDIT_DRAFTS_PER_WEEK - (len(drafts) - len((existing or {}).get("drafts", [])))
+        wanted = min(capacity, config.REDDIT_DRAFTS_PER_WEEK) - (len(drafts) - len((existing or {}).get("drafts", [])))
         if wanted <= 0 or next_n > 9:
             break
         chosen = select(gsc_c, pasted_c, faq_c, skip, wanted)

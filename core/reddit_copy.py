@@ -9,7 +9,7 @@ sees). Anything the code cannot trace to that article is flagged for the owner i
 import json
 import re
 
-from core import copy
+from core import config, copy
 
 LINK_TOKEN = "[[LINK]]"
 DISCLOSURE = {
@@ -17,6 +17,23 @@ DISCLOSURE = {
     "de": "Offenlegung: Ich arbeite für Maison de Cocon, eine deutsche Bettwäsche-Marke.",
 }
 LINK_LEAD = {"en": "More detail on our blog:", "de": "Mehr dazu in unserem Blog:"}
+
+# r/MaisonDeCocon is the brand's OWN community, so posts there carry no disclosure line. The text is kept for
+# the day we post in someone else's subreddit (config.REDDIT_SUBREDDIT != our own).
+OWN_SUBREDDITS = {"maisondecocon"}
+
+
+def needs_disclosure(subreddit=None):
+    return (subreddit or config.REDDIT_SUBREDDIT).lower() not in OWN_SUBREDDITS
+
+
+def strip_disclosure(body):
+    """Remove disclosure lines (either language) from an older draft, e.g. when its ready-to-post email is resent."""
+    lines = [l for l in (body or "").split("\n") if not l.strip().startswith(("Disclosure:", "Offenlegung:"))]
+    out = "\n".join(lines).rstrip()
+    while "\n\n\n" in out:
+        out = out.replace("\n\n\n", "\n\n")
+    return out
 TITLE_MAX = 300
 MIN_BODY_CHARS = 400
 
@@ -41,17 +58,40 @@ Rules:
 - body: the FULL answer in the post itself, practical and concrete (what to do, what to look for, simple numbers),
   roughly 120-300 words, short paragraphs or a short list. Calm, helpful, no sales tone, no superlatives, no call to buy,
   no discount, no emojis, no hashtags. Do not tell people to click anything for the answer.
-- Use ONLY facts that are stated in the SOURCE text below (our blog article). If the source covers only part of the question,
-  answer that part and say plainly what you cannot answer here. Do not add outside knowledge, do not invent numbers,
-  standards, certifications, health/allergy effects, or statements about which products we stock or sell.
+- Use ONLY the facts given below under FACTS. Do not add outside knowledge, do not invent numbers, standards,
+  certifications, health/allergy effects, or statements about which products we stock or sell.
+- NEVER mention or allude to where the facts come from or to what you can or cannot see, know or verify: no "my sources",
+  "the sources", "the article", "the text", "the information I have", "according to ...", and no sentences such as
+  "I can't say anything about X because it isn't covered". Write as a person who simply knows this topic.
+- If part of the question is not covered by the facts, LEAVE THAT PART OUT. Where it genuinely helps the reader you may say
+  plainly that it depends (on the fabric, the product, the person) or that it isn't covered here, without giving a reason.
 - Put the literal token {LINK_TOKEN} on its own line at the very end of the body, once. Do NOT write any URL yourself.
-- Do not write the disclosure line; it is added for you.
-- unsupported: list every statement in your body that is NOT directly supported by the SOURCE text (empty list if none).
+- Do not write any disclosure or affiliation line (the post goes to the brand's own subreddit).
+- unsupported: a list for the owner only (never part of the post): every statement in your body that is NOT directly
+  supported by the FACTS (empty list if none).
 """
 
 
 def build_prompt(question, source):
-    return f"Question: {question}\n\nSOURCE (our blog article, the only allowed facts):\n{source}"
+    return f"Question: {question}\n\nFACTS (the only allowed facts):\n{source}"
+
+
+# Meta-commentary about sources or about what the writer can/cannot see. Never wanted in a post.
+META_PATTERNS = [
+    r"\b(?:my|our|the|these|those|your)\s+sources?\b", r"\bsources?\s+(?:i|we)\s+(?:use|rely|have|used)\b",
+    r"\baccording\s+to\s+(?:the|our|this)\s+(?:article|text|blog|information|facts)\b",
+    r"\b(?:in|from)\s+(?:the|this|our)\s+(?:article|text|facts|information provided)\b",
+    r"\b(?:i|we)\s+(?:can(?:no|')t|cannot|couldn't|don't|do not)\s+(?:see|say|tell|verify|know|comment)\b",
+    r"\bthe\s+(?:information|facts|text)\s+(?:i|we)\s+(?:have|was given|were given)\b",
+    r"\bquellen?\b", r"\blaut\s+(?:dem|unserem|diesem)\s+(?:artikel|text|blog)\b", r"\b(?:im|aus dem)\s+(?:artikel|text)\b",
+    r"\bkann\s+ich\s+(?:hier\s+)?(?:nichts|keine)\b", r"\bsteht\s+nicht\s+in\b", r"\bauf\s+die\s+ich\s+mich\s+stütze\b",
+]
+_META_RE = re.compile("|".join(META_PATTERNS), re.I)
+
+
+def meta_hits(text):
+    """Phrases in the post that talk about sources or about what the writer can/cannot see."""
+    return sorted({m.group(0).strip().lower() for m in _META_RE.finditer(text or "")})
 
 
 def _numbers(text):
@@ -76,6 +116,9 @@ def flags_for(draft, source, has_article=True):
         flags.append(f"Short answer ({len(body)} characters): check that it is complete.")
     if draft.get("link_dropped"):
         flags.append("The model wrote its own URL; it was removed (only our one UTM link is allowed).")
+    hits = meta_hits(body)
+    if hits:
+        flags.append("The post talks about its sources or what it can/cannot see (remove before posting): " + "; ".join(hits))
     return flags
 
 
@@ -91,14 +134,21 @@ def finalize(raw, lang, link):
     parts = [body]
     if link:
         parts.append(f"{LINK_LEAD[lang]} {link}")
-    parts.append(DISCLOSURE[lang])
+    if needs_disclosure():
+        parts.append(DISCLOSURE[lang])
     return {"title": title, "body": "\n\n".join(p for p in parts if p), "unsupported": raw.get("unsupported") or [],
             "link_dropped": link_dropped}
 
 
 def generate(question, lang, source, link, model):
     """-> {title, body, unsupported, link_dropped, flags}"""
-    text = copy._call_claude(_system(lang), build_prompt(question, source), model, max_tokens=1400)
-    draft = finalize(json.loads(text), lang, link)
+    prompt = build_prompt(question, source)
+    draft = finalize(json.loads(copy._call_claude(_system(lang), prompt, model, max_tokens=1400)), lang, link)
+    hits = meta_hits(draft["body"])
+    if hits:  # one corrective retry; anything still left is flagged for the owner
+        retry = (prompt + "\n\nYour previous draft talked about its sources or about what you can/cannot see "
+                 f"({'; '.join(hits)}). Rewrite the post WITHOUT any such wording: leave uncovered parts out, "
+                 "or say plainly that it depends. Same JSON format.")
+        draft = finalize(json.loads(copy._call_claude(_system(lang), retry, model, max_tokens=1400)), lang, link)
     draft["flags"] = flags_for(draft, source, has_article=bool(source))
     return draft
