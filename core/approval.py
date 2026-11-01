@@ -160,7 +160,10 @@ def send_reddit_draft_email(d, redraft=False):
 def send_reddit_ready_email(d, post_on, weekday):
     """After Approve: title + body ready to copy, the suggested day, how to report the URL."""
     e = html.escape
+    from core import reddit_copy  # lazy: keeps approval importable on its own
     repo = os.environ["GITHUB_REPOSITORY"]
+    if not reddit_copy.needs_disclosure():  # older drafts may still carry the disclosure line: never in our own subreddit
+        d = {**d, "body": reddit_copy.strip_disclosure(d["body"])}
     body = f"""
     <h2>Ready to post: r/{e(config.REDDIT_SUBREDDIT)}</h2>
     <p style="font-family:sans-serif"><strong>Suggested posting day: {e(weekday)} {e(post_on)}</strong>
@@ -192,4 +195,21 @@ def send_reddit_skip_email(pending, approved, limit):
         f"Approved: {e(', '.join(approved) or 'none')}</p>"
         f"<p style='color:#666;font-family:sans-serif'>A slot frees up when you reject a draft or post an approved one "
         f"(send its URL via Social Publish). The next Monday run tops the list up again.</p>",
+    )
+
+
+def send_reddit_published_email(url, info):
+    """The ONE short confirmation after the owner submitted the URL of a post."""
+    e = html.escape
+    sub = config.REDDIT_SUBREDDIT
+    article = ""
+    if info.get("article_title"):
+        article = (f"<p style='font-family:sans-serif'>Article: <a href=\"{e(info.get('article_link') or '#', quote=True)}\">"
+                   f"{e(info['article_title'])}</a></p>")
+    _send(
+        f"Published on r/{sub}",
+        f"<h2>Published on r/{e(sub)}</h2>"
+        f"<p style='font-family:sans-serif'><a href=\"{e(url, quote=True)}\">{e(url)}</a></p>{article}"
+        f"<p style='color:#666;font-size:12px;font-family:sans-serif'>Recorded in the ledger from the URL you sent "
+        f"(Reddit cannot be read back).</p>",
     )

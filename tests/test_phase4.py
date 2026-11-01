@@ -202,13 +202,14 @@ class RedditCopy(unittest.TestCase):
     def raw(self, body, **kw):
         return {"title": "What is flannel?", "body": body, "unsupported": [], **kw}
 
-    def test_exactly_one_disclosure_and_at_most_one_link_ours(self):
-        for lang, line in (("en", "Disclosure: I work for Maison de Cocon"), ("de", "Offenlegung: Ich arbeite für Maison de Cocon")):
+    def test_no_disclosure_in_our_own_subreddit_and_at_most_one_link_ours(self):
+        for lang in ("en", "de"):
             d = reddit_copy.finalize(self.raw("Answer.\n\n[[LINK]]"), lang, self.LINK)
-            self.assertEqual(d["body"].count(line), 1)
+            self.assertNotIn("Disclosure", d["body"])
+            self.assertNotIn("Offenlegung", d["body"])
             self.assertEqual(d["body"].count("http"), 1)
             self.assertIn(self.LINK, d["body"])
-            self.assertTrue(d["body"].rstrip().endswith("."))
+            self.assertTrue(d["body"].rstrip().endswith(self.LINK))                     # the link line is last
             self.assertNotIn("[[LINK]]", d["body"])
 
     def test_model_written_urls_are_removed_and_flagged(self):
@@ -362,8 +363,9 @@ class WeeklyRun(WeeklyBase):
             self.assertIn(f"title=approve%3A{aid}%3Areddit", body)
             self.assertIn(f"title=reject%3A{aid}%3Areddit", body)
         text = html.unescape(" ".join(b for _, b in drafts))
-        self.assertIn("Disclosure: I work for Maison de Cocon", text)
-        self.assertIn("Offenlegung: Ich arbeite für Maison de Cocon", text)         # the German question is answered in German
+        self.assertNotIn("Disclosure:", text)
+        self.assertNotIn("Offenlegung:", text)                                       # no disclosure line in r/MaisonDeCocon
+        self.assertIn("Mehr dazu in unserem Blog:", text)                            # the German question is answered in German
         self.assertIn("utm_source=reddit&utm_medium=social&utm_campaign=", text)
         self.assertEqual(text.count("Search Console (last 7 days)"), 3)               # 3 from GSC
         self.assertEqual(text.count("findquestions list pasted by you"), 2)          # 2 pasted
@@ -768,6 +770,271 @@ class NoSourceTalk(unittest.TestCase):
         self.assertEqual(reddit_copy.meta_hits(d["body"]), [])
 
 
+class Disclosure(unittest.TestCase):
+    def test_only_for_other_subreddits(self):
+        self.assertFalse(reddit_copy.needs_disclosure())
+        self.assertFalse(reddit_copy.needs_disclosure("MaisonDeCocon"))
+        self.assertFalse(reddit_copy.needs_disclosure("maisondecocon"))
+        self.assertTrue(reddit_copy.needs_disclosure("Bedding"))
+        with mock.patch.object(config, "REDDIT_SUBREDDIT", "Bedding"):
+            for lang, line in (("en", "Disclosure: I work for Maison de Cocon"), ("de", "Offenlegung: Ich arbeite für Maison de Cocon")):
+                d = reddit_copy.finalize({"title": "t", "body": "Answer.\n\n[[LINK]]", "unsupported": []}, lang, "https://x/y")
+                self.assertEqual(d["body"].count(line), 1)
+                self.assertTrue(d["body"].rstrip().endswith("."))
+
+    def test_strip_removes_the_line_in_both_languages_and_tidies_blank_lines(self):
+        old = "Answer one.\n\nMore detail on our blog: https://x\n\nDisclosure: I work for Maison de Cocon, a German bedding brand."
+        self.assertEqual(reddit_copy.strip_disclosure(old), "Answer one.\n\nMore detail on our blog: https://x")
+        de = "Antwort.\n\nOffenlegung: Ich arbeite für Maison de Cocon, eine deutsche Bettwäsche-Marke."
+        self.assertEqual(reddit_copy.strip_disclosure(de), "Antwort.")
+        self.assertEqual(reddit_copy.strip_disclosure("No disclosure here."), "No disclosure here.")
+
+    def test_the_prompt_no_longer_asks_for_or_adds_a_disclosure(self):
+        self.assertIn("Do not write any disclosure or affiliation line", reddit_copy._system("en"))
+        self.assertNotIn("it is added for you", reddit_copy._system("en"))
+
+
+class UrlForms(unittest.TestCase):
+    ID = "1ab2cd"
+    GOOD = [
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/how_do_i_wash_a_muslin/",
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/how_do_i_wash_a_muslin",        # no trailing slash
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/",                              # no slug
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd",
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/x/?utm_source=share&utm_medium=web3x&utm_name=y",
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/#c",
+        "https://old.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/",
+        "https://new.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/",
+        "https://np.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/",
+        "https://m.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/",
+        "https://reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/",
+        "https://www.reddit.com/r/maisondecocon/comments/1AB2CD/Slug/",                         # case
+        "  https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/  ",                     # pasted with blanks
+        "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/slug/ofabcde/",                 # a comment permalink: same post
+    ]
+
+    def test_every_post_url_shape_resolves_to_the_same_post_id(self):
+        for url in self.GOOD:
+            self.assertEqual(publish.reddit_post_id(url), self.ID, url)
+
+    def test_things_that_are_not_posts_in_our_subreddit_are_rejected(self):
+        for bad in ("https://www.reddit.com/r/bedding/comments/1ab2cd/x/", "https://www.reddit.com/r/MaisonDeCocon/",
+                    "https://www.reddit.com/r/MaisonDeCocon/comments/", "https://redd.it/1ab2cd",
+                    "http://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/", "https://evil.example/r/MaisonDeCocon/comments/1ab2cd/",
+                    "https://www.reddit.com.evil.example/r/MaisonDeCocon/comments/1ab2cd/", "https://www.reddit.com/user/x/comments/1ab2cd/",
+                    "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/x https://evil", "javascript:alert(1)", ""):
+            self.assertIsNone(publish.reddit_post_id(bad), bad)
+
+    def test_share_links_are_recognised(self):
+        for url in ("https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ", "https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ/",
+                    "https://old.reddit.com/r/MaisonDeCocon/s/AbC123xyZ?utm_source=share"):
+            self.assertEqual(publish.reddit_share_id(url), "AbC123xyZ", url)
+            self.assertIsNone(publish.reddit_post_id(url))
+        self.assertIsNone(publish.reddit_share_id("https://www.reddit.com/r/bedding/s/AbC123xyZ"))
+        self.assertIsNone(publish.reddit_share_id("https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/x/"))
+
+    @staticmethod
+    def resp(status, location=None):
+        return mock.Mock(status_code=status, headers={"Location": location} if location else {})
+
+    def test_share_link_resolves_through_redirects_and_never_leaves_reddit(self):
+        share = "https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ"
+        canon = "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/how_do_i/?share_id=abc"
+        calls = []
+        with mock.patch.object(publish.requests, "get", side_effect=lambda u, **k: calls.append((u, k)) or self.resp(301, canon)):
+            self.assertEqual(publish.resolve_share(share), "1ab2cd")
+        self.assertEqual(calls[0][0], share)
+        self.assertFalse(calls[0][1]["allow_redirects"])                                   # hops are checked by hand
+        hops = [self.resp(302, "/r/MaisonDeCocon/s/Zz9"), self.resp(302, canon)]          # relative hop, then the post
+        with mock.patch.object(publish.requests, "get", side_effect=lambda u, **k: hops.pop(0)):
+            self.assertEqual(publish.resolve_share(share), "1ab2cd")
+
+    def test_share_resolution_failures(self):
+        share = "https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ"
+        for case in (self.resp(403), self.resp(429), self.resp(200), self.resp(302, "https://evil.example/x")):
+            with mock.patch.object(publish.requests, "get", return_value=case):
+                with self.assertRaises(publish.ShareResolveError):
+                    publish.resolve_share(share)
+        with mock.patch.object(publish.requests, "get", side_effect=publish.requests.ConnectionError("boom")):
+            with self.assertRaises(publish.ShareResolveError):
+                publish.resolve_share(share)
+        loop = self.resp(302, "/r/MaisonDeCocon/s/Next1")
+        with mock.patch.object(publish.requests, "get", return_value=loop) as g:
+            with self.assertRaises(publish.ShareResolveError):
+                publish.resolve_share(share, max_hops=3)
+        self.assertEqual(g.call_count, 3)
+        with mock.patch.object(publish.requests, "get") as g:
+            with self.assertRaises(publish.ShareResolveError):
+                publish.resolve_share("https://evil.example/s/x")
+        g.assert_not_called()                                                                 # never contacted
+
+
+class UrlSubmission(ManualPublishing):
+    """Approved draft + URL input: accepted shapes, share links, failure text, ONE confirmation."""
+
+    def approve_first(self, n=0):
+        qid = self.ids[n]
+        self.act(f"approve:{qid}:reddit")
+        return qid
+
+    def test_the_accepted_url_shapes_all_publish_with_the_canonical_url(self):
+        for i, url in enumerate(UrlForms.GOOD[:6] + [UrlForms.GOOD[6], UrlForms.GOOD[10]]):
+            qid = self.ids[i % 5] if i < 5 else self.ids[i - 5]
+            if ledger.load()[qid]["reddit"]["status"] != "approved":
+                self.act(f"approve:{qid}:reddit")
+            if ledger.load()[qid]["reddit"]["status"] == "published":
+                continue
+            code, sent, result = self.act(f"approve:{qid}:reddit", url=url)
+            self.assertEqual(code, 0, url)
+            self.assertEqual(ledger.load()[qid]["reddit"]["url"], "https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/", url)
+
+    def test_a_share_link_is_resolved_to_the_canonical_post_url(self):
+        qid = self.approve_first()
+        with mock.patch.object(publish, "resolve_share", return_value="9zz8yy") as res:
+            code, sent, result = self.act(f"approve:{qid}:reddit", url="https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ")
+        self.assertEqual(code, 0)
+        res.assert_called_once()
+        e = ledger.load()[qid]["reddit"]
+        self.assertEqual((e["status"], e["post_id"], e["url"]),
+                         ("published", "9zz8yy", "https://www.reddit.com/r/MaisonDeCocon/comments/9zz8yy/"))
+
+    def assert_resubmit_text(self, text, qid):
+        self.assertIn("Re-submit with the full URL.", text)
+        self.assertIn("browser's address bar", text)
+        for line in (f"article: {qid}", "channel: reddit", "url: <the full address-bar URL of the post>", "test_bad_token: leave unchecked"):
+            self.assertIn(line, text)
+        self.assertIn("Actions -> Social Publish -> Run workflow", text)
+        self.assertIn("/actions/workflows/social-publish.yml", text)
+
+    def test_a_share_link_that_cannot_be_resolved_asks_for_the_address_bar_url(self):
+        qid = self.approve_first()
+        with mock.patch.object(publish, "resolve_share", side_effect=publish.ShareResolveError("Reddit answered HTTP 403 without a redirect")):
+            code, sent, result = self.act(f"approve:{qid}:reddit", url="https://www.reddit.com/r/MaisonDeCocon/s/AbC123xyZ")
+        self.assertEqual((code, ledger.load()[qid]["reddit"]["status"]), (1, "approved"))   # stays approved, waiting for a URL
+        failed = [(s, b) for s, b in sent if s.startswith("[FAILED]")]
+        self.assertEqual(len(failed), 1)
+        text = html.unescape(failed[0][1])
+        self.assert_resubmit_text(text, qid)
+        self.assertIn("share link", text)
+        self.assertIn("address-bar URL of the post instead of the share link", text)
+        self.assertIn("HTTP 403", text)
+
+    def test_any_unusable_url_gets_the_same_resubmit_text(self):
+        qid = self.approve_first()
+        code, sent, result = self.act(f"approve:{qid}:reddit", url="https://www.reddit.com/r/MaisonDeCocon/comments/")
+        self.assertEqual(code, 1)
+        self.assert_resubmit_text(html.unescape(sent[-1][1]), qid)
+        self.assert_resubmit_text(result, qid)                                                 # also in the run result
+        self.assertEqual(ledger.load()[qid]["reddit"]["status"], "approved")
+
+    def test_exactly_one_short_confirmation_after_the_url(self):
+        qid = self.approve_first()
+        code, sent, result = self.act(f"approve:{qid}:reddit", url=UrlForms.GOOD[0])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(sent), 1)
+        subject, body = sent[0]
+        self.assertEqual(subject, "Published on r/MaisonDeCocon")
+        text = html.unescape(body)
+        self.assertIn("https://www.reddit.com/r/MaisonDeCocon/comments/1ab2cd/", text)
+        draft = next(d for d in reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())["drafts"] if d["id"] == qid)
+        self.assertIn(draft["article_title"], text)                                           # the article
+        self.assertLess(len(text), 900)                                                       # short
+        self.assertNotIn(draft["title"], text)                                                # no draft text
+        self.assertNotIn(draft["body"][:40], text)
+
+    def test_a_resubmit_sends_nothing_and_never_resolves_anything(self):
+        qid = self.approve_first()
+        self.act(f"approve:{qid}:reddit", url=UrlForms.GOOD[0])
+        with mock.patch.object(publish, "resolve_share", side_effect=AssertionError("must not resolve")), \
+                mock.patch.object(publish.requests, "get", side_effect=AssertionError("no network")):
+            code, sent, result = self.act(f"approve:{qid}:reddit", url="https://www.reddit.com/r/MaisonDeCocon/s/Whatever1")
+        self.assertEqual((code, sent), (0, []))
+        self.assertIn("already published", result)
+
+    def test_approving_sends_the_ready_email_but_no_confirmation(self):
+        code, sent, _ = self.act(f"approve:{self.ids[0]}:reddit")
+        self.assertEqual([s.split(" (")[0] for s, _ in sent], ["Ready to post"])
+
+    def test_a_failing_confirmation_email_does_not_undo_the_publish(self):
+        qid = self.approve_first()
+        with mock.patch.object(approval, "send_reddit_published_email", side_effect=RuntimeError("resend down")):
+            code, sent, result = self.act(f"approve:{qid}:reddit", url=UrlForms.GOOD[0])
+        self.assertEqual((code, ledger.load()[qid]["reddit"]["status"]), (0, "published"))
+
+    def test_old_approved_drafts_lose_the_disclosure_line_in_a_resent_ready_email(self):
+        qid = self.ids[0]
+        old = next(d for d in reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())["drafts"] if d["id"] == qid)
+        old = {**old, "body": old["body"] + "\n\nDisclosure: I work for Maison de Cocon, a German bedding brand."}
+        approval.send_reddit_ready_email(old, "2026-11-04", "Wednesday")
+        text = html.unescape(self.sent[-1][1])
+        self.assertNotIn("Disclosure:", text)
+        self.assertIn(old["title"], text)
+        with mock.patch.object(config, "REDDIT_SUBREDDIT", "Bedding"):
+            approval.send_reddit_ready_email(old, "2026-11-04", "Wednesday")
+        self.assertIn("Disclosure:", html.unescape(self.sent[-1][1]))                         # kept for other subreddits
+
+
+class RedraftMany(WeeklyBase):
+    def setUp(self):
+        super().setUp()
+        self.run_week(date(2026, 11, 2))
+        self.ids = sorted(ledger.load())
+        data = ledger.load()
+        data[self.ids[4]]["reddit"]["status"] = "approved"                                      # one approved draft
+        ledger.save(data)
+        self.before = reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())
+
+    @staticmethod
+    def claude(s, u, m, max_tokens=0):
+        return json.dumps({"title": "Neu?", "body": "Brushed cotton holds warm air near the skin. " * 12 + "\n\n[[LINK]]", "unsupported": []})
+
+    def run_redraft(self, value):
+        before = len(self.sent)
+        with mock.patch.dict(os.environ, {"REDRAFT_ID": value}), mock.patch.object(copy, "_call_claude", side_effect=self.claude), \
+                mock.patch.object(gsc, "pull", side_effect=AssertionError("no GSC")), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                reddit_draft.main(date(2026, 11, 9))
+                code = 0
+            except SystemExit as e:
+                code = e.code
+        return code, self.sent[before:]
+
+    def test_pending_redrafts_every_unapproved_draft_and_leaves_the_approved_one_as_is(self):
+        code, sent = self.run_redraft("pending")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(sent), 4)                                                            # one new email per re-drafted draft
+        self.assertTrue(all(s.startswith("Reddit RE-DRAFT") for s, _ in sent))
+        after = reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())
+        for b, a in zip(self.before["drafts"], after["drafts"]):
+            if b["id"] == self.ids[4]:
+                self.assertEqual(a, b)                                                            # approved: text untouched
+            else:
+                self.assertEqual((a["id"], a["question"], a["link"]), (b["id"], b["question"], b["link"]))
+                self.assertEqual(a["title"], "Neu?")
+                self.assertNotIn("Disclosure", a["body"])
+        for (subject, body), did in zip(sent, self.ids[:4]):
+            self.assertIn(f"title=approve%3A{did}%3Areddit", body)
+        self.assertEqual({k: v["reddit"]["status"] for k, v in ledger.load().items()},
+                         {**{i: "draft" for i in self.ids[:4]}, self.ids[4]: "approved"})
+
+    def test_comma_separated_ids_and_one_bad_id_does_not_block_the_others(self):
+        code, sent = self.run_redraft(f"{self.ids[0]}, {self.ids[1]}")
+        self.assertEqual((code, len(sent)), (0, 2))
+        code, sent = self.run_redraft(f"{self.ids[2]},{self.ids[4]}")                             # the second is approved
+        self.assertEqual(code, 1)
+        self.assertTrue(sent[-1][0].startswith("[FAILED]"))
+        code, sent = self.run_redraft(f"{self.ids[2]},202511019")                                 # another batch / unknown
+        self.assertEqual(code, 1)
+
+    def test_pending_with_nothing_pending_is_a_clear_failure(self):
+        data = ledger.load()
+        for v in data.values():
+            v["reddit"]["status"] = "approved"
+        ledger.save(data)
+        code, sent = self.run_redraft("pending")
+        self.assertEqual(code, 1)
+
+
 class Workflows(unittest.TestCase):
     def load(self, name):
         return yaml.safe_load((Path(__file__).resolve().parent.parent / ".github" / "workflows" / name).read_text(encoding="utf-8"))
@@ -787,6 +1054,20 @@ class Workflows(unittest.TestCase):
         self.assertIn("redraft", on["workflow_dispatch"]["inputs"])
         self.assertNotIn("inputs.", run["run"])
         self.assertEqual(wf["permissions"]["actions"], "read")
+
+    def test_reddit_approval_issues_get_no_comment(self):
+        steps = self.load("social-publish.yml")["jobs"]["publish"]["steps"]
+        comment = next(s for s in steps if s.get("name") == "Comment result and close the issue")
+        close_only = next(s for s in steps if s.get("name", "").startswith("Close the issue (Reddit"))
+        self.assertIn("!contains(github.event.issue.title, ':reddit')", comment["if"])      # others unchanged
+        self.assertIn("contains(github.event.issue.title, ':reddit')", close_only["if"])
+        self.assertNotIn("comment", close_only["run"])                                        # no `gh issue comment`
+        self.assertIn("gh issue close", close_only["run"])
+
+    def test_redraft_input_accepts_one_several_or_pending(self):
+        on = self.load("social-reddit-draft.yml")
+        desc = (on.get(True) or on.get("on"))["workflow_dispatch"]["inputs"]["redraft"]["description"]
+        self.assertIn("pending", desc)
 
     def test_publish_workflow_takes_the_reddit_url_via_env(self):
         wf = self.load("social-publish.yml")

@@ -83,7 +83,7 @@ jobs:
         run: python publish.py
 
       - name: Comment result and close the issue
-        if: always() && github.event_name == 'issues'
+        if: always() && github.event_name == 'issues' && !contains(github.event.issue.title, ':reddit')
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -94,3 +94,12 @@ jobs:
           fi
           gh issue comment "$ISSUE_NUMBER" --body-file "$RESULT_FILE"
           gh issue close "$ISSUE_NUMBER"
+
+      # Reddit approvals: no comment (the ready-to-post email is the confirmation, a failure has its own email),
+      # so GitHub sends no extra comment notification. The issue is only closed.
+      - name: Close the issue (Reddit, no comment)
+        if: always() && github.event_name == 'issues' && contains(github.event.issue.title, ':reddit')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue close "$ISSUE_NUMBER"

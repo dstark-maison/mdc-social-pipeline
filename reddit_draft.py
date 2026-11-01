@@ -137,34 +137,52 @@ def open_drafts(ledger_data):
     return pending, approved
 
 
-def redraft(draft_id, model):
-    """Re-draft ONE pending draft with the current prompt. Same id, question, article and link (so the
-    existing approval link keeps working and now approves the new version); every other draft in the
-    batch is left exactly as it is. Emails the new version."""
+def redraft_many(ids, model):
+    """Re-draft pending drafts of ONE batch with the current prompt. Same ids, questions, articles and links
+    (the existing approval links keep working and now approve the new version). Drafts that are not in `ids`
+    (e.g. approved ones) are left exactly as they are. One new email per re-drafted draft."""
+    if not ids:
+        raise RuntimeError("No pending Reddit drafts to re-draft")
     data = ledger.load()
-    entry = ledger.get(data, draft_id, "reddit")
-    if not entry:
-        raise RuntimeError(f"No Reddit draft with id {draft_id}")
-    if entry["status"] != ledger.DRAFT:
-        raise RuntimeError(f"Draft {draft_id} is `{entry['status']}`: only drafts that are still pending can be re-drafted")
-    batch = reddit_store.batch_id_of(draft_id)
+    for did in ids:
+        entry = ledger.get(data, did, "reddit")
+        if not entry:
+            raise RuntimeError(f"No Reddit draft with id {did}")
+        if entry["status"] != ledger.DRAFT:
+            raise RuntimeError(f"Draft {did} is `{entry['status']}`: only drafts that are still pending can be re-drafted")
+    batches = {reddit_store.batch_id_of(i) for i in ids}
+    if len(batches) != 1:
+        raise RuntimeError(f"Re-draft one batch at a time (got batches {sorted(batches)})")
+    batch = batches.pop()
     payload = reddit_store.load_batch(batch)
     if payload is None:
         raise RuntimeError(f"The encrypted artifact of batch {batch} is gone (90-day retention)")
-    old = next((d for d in payload["drafts"] if d["id"] == draft_id), None)
-    if old is None:
-        raise RuntimeError(f"Draft {draft_id} is not in the artifact of batch {batch}")
+    by_id = {d["id"]: d for d in payload["drafts"]}
     index = {a["id"]: a for a in ra.fetch_index(os.environ["SHOPIFY_BLOG_HANDLE"])}
-    art = index.get(old["article_id"])
-    if art is None or not art["published"] or art["id"] in config.HOLD_ARTICLE_IDS:
-        raise RuntimeError("The matching article is no longer an eligible fact source (unpublished or held)")
-    out = reddit_copy.generate(old["question"], old["lang"], ra.source_text(art), old["link"], model)
-    new = {**old, "title": out["title"], "body": out["body"], "flags": out["flags"], "redrafted": ledger.now()}
-    reddit_store.write("batch", {"batch": batch, "drafts": [new if d["id"] == draft_id else d for d in payload["drafts"]]})
-    write_output("batch", batch)
-    approval.send_reddit_draft_email(new, redraft=True)
-    print(f"Re-drafted {draft_id} ({len(payload['drafts'])} drafts in batch {batch}, the others untouched); "
-          f"{'flags: ' + str(len(new['flags'])) if new['flags'] else 'no flags'}.")
+    done, failed = {}, []
+    for did in ids:
+        old = by_id.get(did)
+        art = index.get(old["article_id"]) if old else None
+        try:
+            if old is None:
+                raise RuntimeError("not in the batch artifact")
+            if art is None or not art["published"] or art["id"] in config.HOLD_ARTICLE_IDS:
+                raise RuntimeError("the matching article is no longer an eligible fact source (unpublished or held)")
+            out = reddit_copy.generate(old["question"], old["lang"], ra.source_text(art), old["link"], model)
+            done[did] = {**old, "title": out["title"], "body": out["body"], "flags": out["flags"], "redrafted": ledger.now()}
+        except Exception as exc:
+            failed.append((did, http.redact(exc)))
+            print(f"  re-draft of {did} failed: {type(exc).__name__}")
+    if done:
+        reddit_store.write("batch", {"batch": batch, "drafts": [done.get(d["id"], d) for d in payload["drafts"]]})
+        write_output("batch", batch)
+        for did in ids:
+            if did in done:
+                approval.send_reddit_draft_email(done[did], redraft=True)
+    print(f"Re-drafted {len(done)} of {len(ids)} draft(s) in batch {batch}; the other {len(payload['drafts']) - len(done)} "
+          f"draft(s) in the batch are untouched; {sum(bool(d['flags']) for d in done.values())} with flags.")
+    if failed:
+        raise RuntimeError("Re-draft failed for: " + "; ".join(f"{i} ({m})" for i, m in failed))
 
 
 def write_output(name, value):
@@ -180,7 +198,11 @@ def main(today=None):
     redraft_id = os.environ.get("REDRAFT_ID", "").strip()
     if redraft_id:
         try:
-            redraft(redraft_id, model)
+            if redraft_id.lower() == "pending":  # every draft that is still waiting for approval
+                ids = open_drafts(ledger.load())[0]
+            else:
+                ids = [x.strip() for x in redraft_id.replace(";", ",").split(",") if x.strip()]
+            redraft_many(ids, model)
         except Exception as exc:
             print(f"Re-draft failed: {type(exc).__name__}")
             approval.send_failure_email(f"Reddit re-draft failed: {redraft_id}", http.redact(exc))

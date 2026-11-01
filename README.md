@@ -59,13 +59,17 @@ tracks, you post by hand.
   3. **Blog FAQ blocks** (the FAQPage JSON-LD of every article).
   Slots: up to 3 from Search Console, up to 2 pasted, the rest from FAQ (shortfalls filled in that order). Held articles
   (`HOLD_ARTICLE_IDS`) are never a link target or fact source. Questions already in the ledger (any status) are skipped.
-- **The post**: the full answer in the post itself, practical, no sales tone, brand affiliation stated plainly, at most ONE link to the
+- **The post**: the full answer in the post itself, practical, no sales tone, no disclosure line in our own subreddit (kept for posts in other subreddits), at most ONE link to the
   matching article (`utm_source=reddit&utm_medium=social&utm_campaign={handle}`; German pages for German questions). English by
   default, German when the question is German. The model sees only the matched article as its fact source; the email lists
   everything that cannot be traced to it (unknown numbers, claim wording, model-reported gaps, no matching article).
 - **Publish (manual)**: *Approve* -> a copy-ready email (title + body) with a suggested posting day (one post per day). You post it,
   then *Actions -> Social Publish -> Run workflow* with `article` = the draft id, `channel` = `reddit`, `url` = the post URL.
   The ledger then marks it `published` (recorded from your URL; it cannot be read back from Reddit).
+  The URL may be a full post URL with or without title slug, trailing slash or query string, on www/old/new/np/m.reddit.com, or a
+  Reddit share link (`/r/MaisonDeCocon/s/<id>`, resolved by following its redirect, not via the API). If it cannot be read, the
+  failure email says "Re-submit with the full URL" and lists the exact form inputs. One short "Published on r/MaisonDeCocon"
+  email follows a successful submit; Reddit approval issues get no comment (only closed).
 - **Privacy** (this repo is public): Search Console data, the pasted list and the drafts are never committed or logged. They live in
   **encrypted** Actions artifacts (90 days; key = secret `REDDIT_ARTIFACT_KEY`, because artifacts of a public repo are downloadable by
   any GitHub user). The ledger holds only `status`, a 16-character hash of the question (for dedupe), the batch date and, later,

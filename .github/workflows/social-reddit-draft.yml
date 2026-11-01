@@ -18,7 +18,7 @@ on:
         required: false
         type: string
       redraft:
-        description: "Optional: re-draft ONE pending draft by id (e.g. 202610311) with the current prompt; all others stay as they are."
+        description: "Optional: re-draft pending drafts of one batch with the current prompt: one id (202610311), several (202610311,202610312) or the word pending. Approved drafts and all others stay as they are."
         required: false
         type: string
 

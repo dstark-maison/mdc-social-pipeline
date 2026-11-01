@@ -9,7 +9,7 @@ sees). Anything the code cannot trace to that article is flagged for the owner i
 import json
 import re
 
-from core import copy
+from core import config, copy
 
 LINK_TOKEN = "[[LINK]]"
 DISCLOSURE = {
@@ -17,6 +17,23 @@ DISCLOSURE = {
     "de": "Offenlegung: Ich arbeite für Maison de Cocon, eine deutsche Bettwäsche-Marke.",
 }
 LINK_LEAD = {"en": "More detail on our blog:", "de": "Mehr dazu in unserem Blog:"}
+
+# r/MaisonDeCocon is the brand's OWN community, so posts there carry no disclosure line. The text is kept for
+# the day we post in someone else's subreddit (config.REDDIT_SUBREDDIT != our own).
+OWN_SUBREDDITS = {"maisondecocon"}
+
+
+def needs_disclosure(subreddit=None):
+    return (subreddit or config.REDDIT_SUBREDDIT).lower() not in OWN_SUBREDDITS
+
+
+def strip_disclosure(body):
+    """Remove disclosure lines (either language) from an older draft, e.g. when its ready-to-post email is resent."""
+    lines = [l for l in (body or "").split("\n") if not l.strip().startswith(("Disclosure:", "Offenlegung:"))]
+    out = "\n".join(lines).rstrip()
+    while "\n\n\n" in out:
+        out = out.replace("\n\n\n", "\n\n")
+    return out
 TITLE_MAX = 300
 MIN_BODY_CHARS = 400
 
@@ -49,7 +66,7 @@ Rules:
 - If part of the question is not covered by the facts, LEAVE THAT PART OUT. Where it genuinely helps the reader you may say
   plainly that it depends (on the fabric, the product, the person) or that it isn't covered here, without giving a reason.
 - Put the literal token {LINK_TOKEN} on its own line at the very end of the body, once. Do NOT write any URL yourself.
-- Do not write the disclosure line; it is added for you.
+- Do not write any disclosure or affiliation line (the post goes to the brand's own subreddit).
 - unsupported: a list for the owner only (never part of the post): every statement in your body that is NOT directly
   supported by the FACTS (empty list if none).
 """
@@ -117,7 +134,8 @@ def finalize(raw, lang, link):
     parts = [body]
     if link:
         parts.append(f"{LINK_LEAD[lang]} {link}")
-    parts.append(DISCLOSURE[lang])
+    if needs_disclosure():
+        parts.append(DISCLOSURE[lang])
     return {"title": title, "body": "\n\n".join(p for p in parts if p), "unsupported": raw.get("unsupported") or [],
             "link_dropped": link_dropped}
 
