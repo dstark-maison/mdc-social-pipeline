@@ -11,7 +11,7 @@ Held articles (config.HOLD_ARTICLE_IDS) are never a link target or fact source. 
 already in the ledger (drafted, approved, published or rejected) are skipped (hash match).
 
 Tops the open list up to config.REDDIT_MAX_OPEN (5) unposted drafts (pending + approved-but-not-posted); if 5
-are already open the run is skipped with a short email. Picks the missing questions with distinct articles: up to 3 from Search Console, up to 2 pasted, the
+are already open the run is skipped (log line only, no email). Picks the missing questions with distinct articles: up to 3 from Search Console, up to 2 pasted, the
 rest from FAQ blocks (shortfalls are filled in that priority order). One draft per question,
 one review email per draft (Approve / Reject).
 
@@ -219,7 +219,6 @@ def main(today=None):
     if capacity <= 0:
         print(f"Skipped: {len(pending) + len(approved)} unposted drafts already open "
               f"({len(pending)} pending, {len(approved)} approved, not posted yet).")
-        approval.send_reddit_skip_email(pending, approved, config.REDDIT_MAX_OPEN)
         return
     print(f"Open drafts: {len(pending)} pending + {len(approved)} approved-not-posted; drafting up to {capacity}.")
 

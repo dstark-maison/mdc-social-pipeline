@@ -182,22 +182,6 @@ def send_reddit_ready_email(d, post_on, weekday):
     _send(f"Ready to post ({weekday} {post_on}): {d['title'][:80]}", body)
 
 
-def send_reddit_skip_email(pending, approved, limit):
-    """Short note when the weekly Reddit run is skipped because the open list is already full."""
-    e = html.escape
-    _send(
-        f"Reddit weekly run skipped: {len(pending) + len(approved)} of {limit} drafts still open",
-        f"<h2>Reddit: no new drafts this week</h2>"
-        f"<p style='font-family:sans-serif'>{len(pending) + len(approved)} unposted drafts are already open "
-        f"(limit {limit}): <strong>{len(pending)} pending approval</strong>, "
-        f"<strong>{len(approved)} approved but not posted yet</strong>.</p>"
-        f"<p style='font-family:sans-serif'>Pending: {e(', '.join(pending) or 'none')}<br>"
-        f"Approved: {e(', '.join(approved) or 'none')}</p>"
-        f"<p style='color:#666;font-family:sans-serif'>A slot frees up when you reject a draft or post an approved one "
-        f"(send its URL via Social Publish). The next Monday run tops the list up again.</p>",
-    )
-
-
 def send_reddit_published_email(url, info):
     """The ONE short confirmation after the owner submitted the URL of a post."""
     e = html.escape

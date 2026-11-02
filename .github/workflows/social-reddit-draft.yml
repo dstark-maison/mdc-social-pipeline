@@ -1,5 +1,5 @@
 # Weekly Reddit drafts for r/MaisonDeCocon (Monday cron + manual run). Tops the list up to 5 unposted drafts
-# (pending + approved-not-posted); with 5 already open the run is skipped with a short email.
+# (pending + approved-not-posted); with 5 already open the run is skipped (log line only, no email).
 # PRIVACY: this repo is public. Search Console data, the pasted findquestions list and the drafts are
 # never committed and never printed; they live in ENCRYPTED artifacts (90 days, key = secret
 # REDDIT_ARTIFACT_KEY). The ledger gets only status + a short question hash.
