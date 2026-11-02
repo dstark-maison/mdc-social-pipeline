@@ -45,6 +45,12 @@ without its read-back.
 
 ## Reddit (r/MaisonDeCocon): drafts, manual posting
 
+> **PAUSED (2026-11-02):** the Reddit account is banned site-wide (appeal pending). `config.REDDIT_PAUSED = True`, the
+> *Social Reddit Draft* workflow is disabled, and nothing Reddit-related runs: no drafts, re-drafts, copy-ready emails,
+> approvals, rejects or URL submissions. Existing drafts and the ledger are untouched (`202610315` is `paused`). To resume:
+> set the flag to `False`, re-enable the workflow, and decide what happens to `paused` drafts. When it resumes, posts have
+> **no URL** (`config.REDDIT_INCLUDE_LINK = False`).
+
 Reddit closed new API access (31 Oct 2026) and ends the public API in March 2027, so there is **no Reddit API**: the pipeline drafts and
 tracks, you post by hand.
 

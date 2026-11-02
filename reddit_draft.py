@@ -117,8 +117,9 @@ def select(gsc_c, pasted_c, faq_c, seen, n=config.REDDIT_DRAFTS_PER_WEEK):
 
 def build_draft(cand, index_by_id, draft_id, model):
     art = index_by_id[cand["article_id"]]
-    link = ra.article_url(art, cand["lang"], ra.reddit_utm(art))
-    out = reddit_copy.generate(cand["text"], cand["lang"], ra.source_text(art), link, model)
+    link = ra.article_url(art, cand["lang"], ra.reddit_utm(art))  # reference for the owner; only used in the post if REDDIT_INCLUDE_LINK
+    out = reddit_copy.generate(cand["text"], cand["lang"], ra.source_text(art),
+                               link if config.REDDIT_INCLUDE_LINK else None, model)
     return {"id": draft_id, "question": cand["text"], "lang": cand["lang"], "source": cand["source"],
             "signals": cand["signals"], "article_id": art["id"], "article_handle": art["handle"],
             "article_title": art["title"], "link": link, "title": out["title"], "body": out["body"],
@@ -168,7 +169,8 @@ def redraft_many(ids, model):
                 raise RuntimeError("not in the batch artifact")
             if art is None or not art["published"] or art["id"] in config.HOLD_ARTICLE_IDS:
                 raise RuntimeError("the matching article is no longer an eligible fact source (unpublished or held)")
-            out = reddit_copy.generate(old["question"], old["lang"], ra.source_text(art), old["link"], model)
+            out = reddit_copy.generate(old["question"], old["lang"], ra.source_text(art),
+                                       old["link"] if config.REDDIT_INCLUDE_LINK else None, model)
             done[did] = {**old, "title": out["title"], "body": out["body"], "flags": out["flags"], "redrafted": ledger.now()}
         except Exception as exc:
             failed.append((did, http.redact(exc)))
@@ -193,6 +195,9 @@ def write_output(name, value):
 
 
 def main(today=None):
+    if config.REDDIT_PAUSED:
+        print("Reddit channel is PAUSED (config.REDDIT_PAUSED): no drafts, no re-drafts, no emails. Nothing done.")
+        return
     config.require_env(BASE_ENV)
     model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
     redraft_id = os.environ.get("REDRAFT_ID", "").strip()
