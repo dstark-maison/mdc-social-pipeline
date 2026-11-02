@@ -1035,6 +1035,52 @@ class RedraftMany(WeeklyBase):
         self.assertEqual(code, 1)
 
 
+class ModelJson(unittest.TestCase):
+    OK = {"title": "T?", "body": "Brushed cotton holds warm air. " * 15 + "\n\n[[LINK]]", "unsupported": []}
+    LINK = "https://www.maisondecocon.com/en/blogs/blog/x?utm_source=reddit&utm_medium=social&utm_campaign=x"
+
+    def test_tolerant_parsing(self):
+        good = json.dumps(self.OK)
+        self.assertEqual(reddit_copy.parse_model_json(good)["title"], "T?")
+        self.assertEqual(reddit_copy.parse_model_json("```json\n" + good + "\n```")["title"], "T?")
+        self.assertEqual(reddit_copy.parse_model_json("Here is the post:\n" + good + "\nHope this helps.")["title"], "T?")
+        raw_newline = '{"title": "T?", "body": "line one\nline two", "unsupported": []}'     # a raw newline inside a string
+        with self.assertRaises(ValueError):
+            json.loads(raw_newline)                                                          # strict JSON rejects it...
+        self.assertEqual(reddit_copy.parse_model_json(raw_newline)["body"], "line one\nline two")   # ...we accept it
+
+    def test_unusable_replies_raise_without_leaking_content(self):
+        for bad in ("", "no json at all", '{"title": "cut off", "body": "text that never ends', '{"title": "x"}', "[1, 2]"):
+            with self.assertRaises(ValueError) as cm:
+                reddit_copy.parse_model_json(bad)
+            self.assertNotIn("never ends", str(cm.exception))
+            self.assertNotIn("cut off", str(cm.exception))
+
+    def test_a_bad_reply_is_retried_once_with_a_strict_reminder_then_succeeds(self):
+        replies = ['{"title": "cut off", "body": "text that never ends', json.dumps(self.OK)]
+        prompts = []
+        with mock.patch.object(copy, "_call_claude", side_effect=lambda s, u, m, max_tokens=0: prompts.append((u, max_tokens)) or replies.pop(0)):
+            d = reddit_copy.generate("Is flannel warm?", "en", "FACTS", self.LINK, "m")
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("ONLY one valid JSON object", prompts[1][0])
+        self.assertTrue(all(t == reddit_copy.MAX_TOKENS for _, t in prompts))
+        self.assertGreaterEqual(reddit_copy.MAX_TOKENS, 3000)                                  # no more cut-off replies
+        self.assertIn(self.LINK, d["body"])
+
+    def test_two_bad_replies_fail_with_a_clear_error(self):
+        with mock.patch.object(copy, "_call_claude", return_value="not json"):
+            with self.assertRaises(ValueError):
+                reddit_copy.generate("Is flannel warm?", "en", "FACTS", self.LINK, "m")
+
+    def test_source_talk_retry_still_works_with_the_new_parsing(self):
+        dirty = {**self.OK, "body": self.OK["body"] + "\nDas steht nicht in den Quellen."}
+        replies = [json.dumps(dirty), json.dumps(self.OK)]
+        with mock.patch.object(copy, "_call_claude", side_effect=lambda *a, **k: replies.pop(0)) as call:
+            d = reddit_copy.generate("Is flannel warm?", "en", "FACTS", self.LINK, "m")
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(reddit_copy.meta_hits(d["body"]), [])
+
+
 class Workflows(unittest.TestCase):
     def load(self, name):
         return yaml.safe_load((Path(__file__).resolve().parent.parent / ".github" / "workflows" / name).read_text(encoding="utf-8"))
