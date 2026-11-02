@@ -314,7 +314,8 @@ class WeeklyBase(tp.InTmp):
         def fake_read(name, filename):  # what the workflow uploaded, as the next run/approval would download it
             f = self.uploaded / f"{name}.enc"
             return reddit_store.decrypt(f.read_bytes()) if f.exists() else None
-        patches = [mock.patch.object(reddit_store, "read", fake_read),
+        patches = [mock.patch.object(config, "REDDIT_PAUSED", False), mock.patch.object(config, "REDDIT_INCLUDE_LINK", True),
+                   mock.patch.object(reddit_store, "read", fake_read),
                    mock.patch.object(approval, "_send", side_effect=lambda s, b: self.sent.append((s, b))),
                    mock.patch.object(ra, "fetch_index", return_value=INDEX),
                    mock.patch.object(copy, "_call_claude", side_effect=lambda s, u, m, max_tokens=0: claude_json(u.split("\n")[0][len("Question: "):]))]
@@ -1083,6 +1084,149 @@ class ModelJson(unittest.TestCase):
             d = reddit_copy.generate("Is flannel warm?", "en", "FACTS", self.LINK, "m")
         self.assertEqual(call.call_count, 2)
         self.assertEqual(reddit_copy.meta_hits(d["body"]), [])
+
+
+class PauseDefaults(unittest.TestCase):
+    def test_the_shipped_defaults(self):
+        self.assertIs(config.REDDIT_PAUSED, True)           # banned account: everything Reddit is paused
+        self.assertIs(config.REDDIT_INCLUDE_LINK, False)    # when it resumes: no URL in posts
+        self.assertEqual(ledger.PAUSED, "paused")
+
+
+class Paused(WeeklyBase):
+    """The channel is paused: nothing runs, nothing is sent, drafts and ledger stay exactly as they are."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_week(date(2026, 11, 2))                                   # five drafts exist (made while 'resumed')
+        data = ledger.load()
+        data[sorted(data)[4]]["reddit"].update(status="paused")           # #5, parked
+        ledger.save(data)
+        self.snapshot = (ledger.load(), (self.uploaded / "reddit-batch-20261102.enc").read_bytes())
+        self.ids = sorted(ledger.load())
+        self.pause = mock.patch.object(config, "REDDIT_PAUSED", True)
+        self.pause.start()
+        self.addCleanup(self.pause.stop)
+        self.sent.clear()
+
+    def untouched(self):
+        self.assertEqual(ledger.load(), self.snapshot[0])
+        self.assertEqual((self.uploaded / "reddit-batch-20261102.enc").read_bytes(), self.snapshot[1])
+        self.assertEqual(self.sent, [])                                    # not one email
+
+    def test_weekly_manual_and_redraft_runs_do_nothing(self):
+        boom = AssertionError("must not be called while paused")
+        for env in ({}, {"QUESTIONS": "Which throw blanket material is best for winter?"}, {"REDRAFT_ID": "pending"},
+                    {"REDRAFT_ID": self.ids[0]}):
+            out = io.StringIO()
+            with mock.patch.dict(os.environ, env), mock.patch.object(gsc, "pull", side_effect=boom), \
+                    mock.patch.object(copy, "_call_claude", side_effect=boom), mock.patch.object(ra, "fetch_index", side_effect=boom), \
+                    contextlib.redirect_stdout(out):
+                reddit_draft.main(date(2026, 11, 9))
+            self.assertIn("PAUSED", out.getvalue())
+            self.untouched()
+
+    def act(self, title, url=""):
+        env = {**tp.MainFlow.env, "RESULT_FILE": "result.md", "GITHUB_TOKEN": "x", "REDDIT_URL": url, "TITLE": title}
+        with mock.patch.dict(os.environ, env):
+            try:
+                publish.main()
+                return 0, Path("result.md").read_text(encoding="utf-8")
+            except SystemExit as e:
+                return e.code, Path("result.md").read_text(encoding="utf-8")
+
+    def test_approve_reject_and_url_submissions_are_inert(self):
+        for qid in self.ids:
+            for title, url in ((f"approve:{qid}:reddit", ""), (f"reject:{qid}:reddit", ""),
+                               (f"approve:{qid}:reddit", "https://www.reddit.com/r/MaisonDeCocon/comments/abc123/x/")):
+                code, result = self.act(title, url)
+                self.assertEqual(code, 0, (title, url))
+                self.assertIn("paused", result)
+                self.untouched()                                           # no ready email, no confirmation, no status change
+
+    def test_the_parked_draft_is_neither_published_nor_rejected(self):
+        self.assertEqual(ledger.load()[self.ids[4]]["reddit"]["status"], "paused")
+        with mock.patch.object(config, "REDDIT_PAUSED", False):           # even if the flag were lifted, a paused draft stays parked
+            code, result = self.act(f"approve:{self.ids[4]}:reddit", "https://www.reddit.com/r/MaisonDeCocon/comments/abc123/x/")
+            self.assertEqual(code, 0)
+            self.assertIn("is paused", result)
+            code, result = self.act(f"approve:{self.ids[4]}:reddit")
+            self.assertIn("is paused", result)
+        self.assertEqual(ledger.load()[self.ids[4]]["reddit"]["status"], "paused")
+        self.assertEqual(self.sent, [])
+
+    def test_paused_drafts_do_not_count_as_open(self):
+        pending, approved = reddit_draft.open_drafts(ledger.load())
+        self.assertEqual((len(pending), len(approved)), (4, 0))
+
+    def test_other_channels_are_not_affected(self):
+        ledger.save({**ledger.load(), "752055845197": {"ig": {"status": "published", "url": "https://www.instagram.com/p/x/",
+                                                               "handle": "h"}}})
+        mod = mock.Mock()
+        env = {**tp.MainFlow.env, "RESULT_FILE": "result.md", "TITLE": "approve:752055845197:ig", "REDDIT_URL": ""}
+        with mock.patch.dict(os.environ, env), mock.patch.dict(publish.CHANNELS, {"ig": mod}), \
+                mock.patch.object(publish.meta, "preflight", return_value={}):
+            publish.main()
+        self.assertIn("already published", Path("result.md").read_text(encoding="utf-8"))   # IG logic runs exactly as before
+        mod.publish.assert_not_called()
+
+
+class NoLinkMode(WeeklyBase):
+    """The default for when Reddit resumes: the post contains no URL."""
+
+    def setUp(self):
+        super().setUp()
+        self.nolink = mock.patch.object(config, "REDDIT_INCLUDE_LINK", False)
+        self.nolink.start()
+        self.addCleanup(self.nolink.stop)
+
+    def test_prompt_forbids_urls_and_has_no_link_token(self):
+        s = reddit_copy._system("en", with_link=False)
+        self.assertIn("Do NOT include any URL or link of any kind", s)
+        self.assertNotIn("[[LINK]]", s)
+        s = reddit_copy._system("de", with_link=False)
+        self.assertNotIn("[[LINK]]", s)
+        with_link = reddit_copy._system("en")                              # link mode is unchanged
+        self.assertIn("[[LINK]]", with_link)
+
+    def test_drafts_have_no_url_but_the_owner_still_sees_the_article(self):
+        sent, log = self.run_week(date(2026, 11, 2))
+        batch = reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())
+        self.assertEqual(len(batch["drafts"]), 5)
+        for d in batch["drafts"]:
+            self.assertNotIn("http", d["body"])
+            self.assertNotIn("[[LINK]]", d["body"])
+            self.assertNotIn("Mehr dazu in unserem Blog", d["body"])
+            self.assertNotIn("More detail on our blog", d["body"])
+            self.assertIn("utm_source=reddit", d["link"])                  # stored as a reference for the owner
+        mails = html.unescape(" ".join(b for s, b in sent if s.startswith("Reddit draft")))
+        self.assertIn("reference only: the post has no link", mails)
+
+    def test_the_model_prompt_gets_no_link_instruction(self):
+        seen = []
+        with mock.patch.object(copy, "_call_claude", side_effect=lambda s, u, m, max_tokens=0: seen.append(s) or claude_json("Is flannel warm?")):
+            reddit_copy.generate("Is flannel warm?", "en", "FACTS", None, "m")
+        self.assertTrue(seen and all("Do NOT include any URL" in x and "[[LINK]]" not in x for x in seen))
+
+    def test_a_url_written_by_the_model_is_removed_and_flagged(self):
+        reply = json.dumps({"title": "T?", "body": "Brushed cotton holds warm air. " * 14 + " See https://evil.example/x for more.", "unsupported": []})
+        with mock.patch.object(copy, "_call_claude", return_value=reply):
+            d = reddit_copy.generate("Is flannel warm?", "en", "FACTS", None, "m")
+        self.assertNotIn("http", d["body"])
+        self.assertTrue(any("own URL" in f for f in d["flags"]))
+
+    def test_redrafts_are_link_free_too(self):
+        self.run_week(date(2026, 11, 2))
+        with mock.patch.dict(os.environ, {"REDRAFT_ID": "pending"}), contextlib.redirect_stdout(io.StringIO()):
+            reddit_draft.main(date(2026, 11, 9))
+        for d in reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())["drafts"]:
+            self.assertNotIn("http", d["body"])
+
+    def test_link_mode_can_be_switched_back_on(self):
+        with mock.patch.object(config, "REDDIT_INCLUDE_LINK", True):
+            self.run_week(date(2026, 11, 2))
+        for d in reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())["drafts"]:
+            self.assertEqual(d["body"].count("http"), 1)
 
 
 class Workflows(unittest.TestCase):

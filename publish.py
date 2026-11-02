@@ -44,6 +44,8 @@ def parse_title(title):
 
 
 def do_reject(article_id, channel):
+    if channel == "reddit" and config.REDDIT_PAUSED:
+        return "- `reddit`: the Reddit channel is paused; nothing changed."
     data = ledger.load()
     entry = ledger.get(data, article_id, channel)
     if not entry:
@@ -156,10 +158,14 @@ def suggest_day(data, today=None):
 
 def do_reddit(question_id):
     """Approve, or (with REDDIT_URL set) record the posted URL. Returns (markdown line, ok)."""
+    if config.REDDIT_PAUSED:  # no ready email, no approval, no URL: drafts and ledger stay exactly as they are
+        return "- `reddit`: the Reddit channel is paused; nothing done (no email, no ledger change).", True
     data = ledger.load()
     entry = ledger.get(data, question_id, "reddit")
     if not entry:
         raise Blocked(f"No Reddit draft with id {question_id} in the ledger.")
+    if entry["status"] == ledger.PAUSED:
+        return f"- `reddit`: draft {question_id} is paused (neither posted nor rejected); nothing done.", True
     url = os.environ.get("REDDIT_URL", "").strip()
 
     if url:

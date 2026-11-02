@@ -45,8 +45,11 @@ _URL_RE = re.compile(r"https?://\S+")
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 
 
-def _system(lang):
+def _system(lang, with_link=True):
     language = "German" if lang == "de" else "English"
+    link_rule = (f"- Put the literal token {LINK_TOKEN} on its own line at the very end of the body, once. "
+                 "Do NOT write any URL yourself.") if with_link else (
+        "- Do NOT include any URL or link of any kind, and do not tell people to look anything up on a website.")
     return f"""You write a Reddit post for r/MaisonDeCocon on behalf of Maison de Cocon, a German bedding brand.
 The post answers ONE question from a reader. Write the whole post in {language}.
 
@@ -65,7 +68,7 @@ Rules:
   "I can't say anything about X because it isn't covered". Write as a person who simply knows this topic.
 - If part of the question is not covered by the facts, LEAVE THAT PART OUT. Where it genuinely helps the reader you may say
   plainly that it depends (on the fabric, the product, the person) or that it isn't covered here, without giving a reason.
-- Put the literal token {LINK_TOKEN} on its own line at the very end of the body, once. Do NOT write any URL yourself.
+{link_rule}
 - Do not write any disclosure or affiliation line (the post goes to the brand's own subreddit).
 - unsupported: a list for the owner only (never part of the post): every statement in your body that is NOT directly
   supported by the FACTS (empty list if none).
@@ -166,10 +169,11 @@ def parse_model_json(text):
 def _ask(prompt, lang, link, model):
     """One model call -> finalized draft. If the reply is not usable JSON, ask once more with a strict reminder."""
     try:
-        return finalize(parse_model_json(copy._call_claude(_system(lang), prompt, model, max_tokens=MAX_TOKENS)), lang, link)
-    except ValueError:
-        return finalize(parse_model_json(copy._call_claude(_system(lang), prompt + JSON_REMINDER, model, max_tokens=MAX_TOKENS)),
+        return finalize(parse_model_json(copy._call_claude(_system(lang, link is not None), prompt, model, max_tokens=MAX_TOKENS)),
                         lang, link)
+    except ValueError:
+        return finalize(parse_model_json(copy._call_claude(_system(lang, link is not None), prompt + JSON_REMINDER, model,
+                                                           max_tokens=MAX_TOKENS)), lang, link)
 
 
 def generate(question, lang, source, link, model):

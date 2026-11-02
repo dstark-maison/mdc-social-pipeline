@@ -144,7 +144,7 @@ def send_reddit_draft_email(d, redraft=False):
     <h2>Reddit draft: {e(d['question'])}</h2>
     <p style="color:#666;font-family:sans-serif">Language: <strong>{e(d['lang'].upper())}</strong> &middot;
        Source: {e(_source_line(d))}<br>
-       Matching article: {e(d.get('article_title') or 'none')} {('&middot; ' + e(link)) if link else ''}</p>
+       Matching article: {e(d.get('article_title') or 'none')} {('&middot; ' + e(link) + ' (reference only: the post has no link)') if link and not config.REDDIT_INCLUDE_LINK else ('&middot; ' + e(link) if link else '')}</p>
     {flag_block}
     <h3>Post title</h3>
     <p style="font-size:16px"><strong>{e(d['title'])}</strong></p>
