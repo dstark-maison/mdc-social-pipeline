@@ -567,25 +567,19 @@ class TopUp(WeeklyBase):
         data["900000000001"] = {"ig": {"status": "draft"}}                          # other channels never count
         self.assertEqual(reddit_draft.open_drafts(data), (["20261101", "20261102"], ["20261103"]))
 
-    def test_five_open_means_the_run_is_skipped_with_a_short_email(self):
+    def test_five_open_means_the_run_is_skipped_silently_with_a_log_line_only(self):
         self.run_week(date(2026, 11, 2))
         before = ledger.load()
         self.set_status(["draft", "draft", "draft", "approved", "approved"])        # 3 pending + 2 approved-not-posted
-        n_mails = len(self.sent)
         calls = []
         with mock.patch.object(gsc, "pull", side_effect=lambda *a: calls.append("gsc")), \
                 mock.patch.object(copy, "_call_claude", side_effect=lambda *a, **k: calls.append("claude")):
             sent, log = self.run_week(date(2026, 11, 9))
         self.assertEqual(calls, [])                                                  # nothing expensive ran
-        self.assertEqual(len(sent), 1)
-        subject, body = sent[0]
-        self.assertEqual(subject, "Reddit weekly run skipped: 5 of 5 drafts still open")
-        text = html.unescape(body)
-        self.assertIn("3 pending approval", text)
-        self.assertIn("2 approved but not posted yet", text)
-        self.assertLess(len(text), 1600)                                              # short
+        self.assertEqual(sent, [])                                                   # NO email of any kind
         self.assertEqual(sorted(ledger.load()), sorted(before))                       # no new drafts
-        self.assertIn("Skipped", log)
+        self.assertIn("Skipped: 5 unposted drafts already open (3 pending, 2 approved, not posted yet).", log)
+        self.assertFalse(hasattr(approval, "send_reddit_skip_email"))                 # the template is gone, not just unused
 
     def test_rejected_and_published_free_slots_and_the_run_tops_up_exactly_the_gap(self):
         self.run_week(date(2026, 11, 2))
@@ -610,20 +604,30 @@ class TopUp(WeeklyBase):
         self.assertEqual(made, self.count_new(before))
         self.assertTrue(1 <= made <= 5)                                                  # ...but never more than the questions left (used ones are skipped)
 
-    def test_manual_runs_follow_the_same_rule(self):
+    def test_manual_runs_follow_the_same_rule_and_are_silent_too(self):
         self.run_week(date(2026, 11, 2))
         n = len(ledger.load())
-        sent, _ = self.run_week(date(2026, 11, 2), "Which throw blanket material is best for winter?")   # same day, manual
+        sent, log = self.run_week(date(2026, 11, 2), "Which throw blanket material is best for winter?")   # same day, manual
         self.assertEqual(len(ledger.load()), n)                                       # still 5 open: skipped
-        self.assertTrue(sent[0][0].startswith("Reddit weekly run skipped"))
+        self.assertEqual(sent, [])
+        self.assertIn("Skipped", log)
 
-    def test_skip_email_never_contains_draft_text(self):
+    def test_the_skip_log_line_contains_counts_only(self):
         self.run_week(date(2026, 11, 2))
-        sent, _ = self.run_week(date(2026, 11, 9))
-        body = html.unescape(sent[0][1])
+        sent, log = self.run_week(date(2026, 11, 9))
         for d in reddit_store.decrypt(Path("reddit-out/batch.enc").read_bytes())["drafts"]:
-            self.assertNotIn(d["question"], body)
-            self.assertNotIn(d["title"], body)
+            self.assertNotIn(d["question"].lower(), log.lower())
+            self.assertNotIn(d["title"].lower(), log.lower())
+
+    def test_a_submitted_url_frees_a_slot_and_the_next_run_tops_up_one_draft(self):
+        self.run_week(date(2026, 11, 2))
+        first = set(ledger.load())
+        data = ledger.load()
+        data[sorted(data)[4]]["reddit"]["status"] = "published"                      # e.g. #5 posted, nothing held back
+        ledger.save(data)
+        sent, _ = self.run_week(date(2026, 11, 9))
+        self.assertEqual(self.count_new(first), 1)
+        self.assertEqual(len([s for s, _ in sent if s.startswith("Reddit draft")]), 1)
 
 
 class Redraft(WeeklyBase):
