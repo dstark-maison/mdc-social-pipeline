@@ -58,6 +58,43 @@ def _button(label, url, color):
     )
 
 
+def _big_button(label, url):
+    return (
+        f'<a href="{html.escape(url, quote=True)}" style="display:inline-block;'
+        f'padding:16px 40px;margin:6px 0;background:#2e6b3a;color:#fff;font-size:20px;font-weight:bold;'
+        f'text-decoration:none;font-family:sans-serif;border-radius:4px">{html.escape(label)}</a>'
+    )
+
+
+def _small_button(label, url, color):
+    return (
+        f'<a href="{html.escape(url, quote=True)}" style="display:inline-block;'
+        f'padding:5px 10px;margin:2px 6px 2px 0;background:{color};color:#fff;font-size:12px;'
+        f'text-decoration:none;font-family:sans-serif;border-radius:3px">{html.escape(label)}</a>'
+    )
+
+
+def button_block(article_id, buttons):
+    """buttons: [(label, action, channels)]. The all-channels approval is the one big primary button;
+    single-channel approvals and Reject are small and set apart, so they are not clicked by mistake."""
+    link = lambda action, channels: approval_link(action, article_id, channels)
+    approves = [b for b in buttons if b[1] == "approve"]
+    primary = next((b for b in approves if "+" in b[2]), approves[0] if approves else None)
+    partial = [b for b in approves if b is not primary]
+    rejects = [b for b in buttons if b[1] != "approve"]
+    out = ""
+    if primary:
+        out += f"<p>{_big_button(primary[0], link(primary[1], primary[2]))}</p>"
+    if partial:
+        out += ("<p style='margin:18px 0 4px;color:#666;font-size:12px'>Only one channel "
+                "(the other stays a draft):</p><p>"
+                + "".join(_small_button(l, link(a, c), "#6b7d6f") for l, a, c in partial) + "</p>")
+    if rejects:
+        out += ("<p style='margin:18px 0 4px;color:#666;font-size:12px'>Discard:</p><p>"
+                + "".join(_small_button(l, link(a, c), "#8a2f2f") for l, a, c in rejects) + "</p>")
+    return out
+
+
 def pending_section(pending):
     """pending: [(article_id, channels "ig" / "ig+fb", title, handle)] -> HTML list with Approve links."""
     if not pending:
@@ -87,16 +124,12 @@ def send_draft_email(article, previews, buttons, pending=None):
         """
         for p in previews
     )
-    btns = "".join(
-        _button(label, approval_link(action, article["article_id"], channels),
-                "#2e6b3a" if action == "approve" else "#8a2f2f")
-        for label, action, channels in buttons
-    )
+    btns = button_block(article["article_id"], buttons)
     body = f"""
     <h2>Review: {e(article['title'])}</h2>
     {blocks}
     <hr>
-    <p>{btns}</p>
+    {btns}
     <p style="color:#666;font-size:12px">A button opens a prefilled GitHub issue.
     Click "Submit new issue" to confirm (you must be signed in as a repo
     collaborator). Nothing publishes on its own.</p>
