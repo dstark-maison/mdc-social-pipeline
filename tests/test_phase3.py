@@ -198,6 +198,60 @@ class PinterestAuth(AuthBase):
         self.assertIn("invalid_refresh_token", str(cm.exception))
         self.assertIn("one-time OAuth", str(cm.exception))
 
+    def stale(self):
+        return http.ApiError('pinterest-token failed: HTTP 401: {"message":"invalid_refresh_token"}')
+
+    def test_overlapping_runs_retry_once_with_the_newer_stored_token(self):
+        calls = []
+
+        def request(method, url, name, **kw):
+            calls.append(kw["data"]["refresh_token"])
+            if len(calls) == 1:
+                raise self.stale()                                          # our token was just replaced by another run
+            return self.token_response(refresh="pinr-THIRD-token-444")
+
+        def resync():                                                       # the other run's state arrives via git
+            from cryptography.fernet import Fernet
+            fp = pinterest_auth.fingerprint("pinr-secret-token-111")
+            enc = Fernet(self.key.encode()).encrypt(b"pinr-OTHERRUN-token-333").decode()
+            pinterest_auth.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            pinterest_auth.STATE_PATH.write_text(json.dumps({"refresh_token_enc": enc, "secret_fingerprint": fp}), encoding="utf-8")
+
+        with mock.patch.object(http, "request", side_effect=request),                 mock.patch.object(pinterest_auth, "_resync_state", side_effect=resync) as rs:
+            token, state = pinterest_auth.refresh()
+        self.assertEqual(calls, ["pinr-secret-token-111", "pinr-OTHERRUN-token-333"])
+        self.assertEqual(rs.call_count, 1)
+        self.assertEqual(token, "pina-access-token-xyz")
+        self.assertEqual(pinterest_auth.current_refresh_token(), "pinr-THIRD-token-444")   # the newest one is stored
+
+    def test_no_retry_when_the_stored_token_is_the_same_one(self):
+        with mock.patch.object(http, "request", side_effect=self.stale()) as req,                 mock.patch.object(pinterest_auth, "_resync_state"):
+            with self.assertRaises(pinterest_auth.PinterestAuthError):
+                pinterest_auth.refresh()
+        self.assertEqual(req.call_count, 1)                                 # nothing newer: fail at once, no loop
+
+    def test_only_one_retry_even_if_the_newer_token_fails_too(self):
+        def resync():
+            from cryptography.fernet import Fernet
+            fp = pinterest_auth.fingerprint("pinr-secret-token-111")
+            enc = Fernet(self.key.encode()).encrypt(b"pinr-OTHERRUN-token-333").decode()
+            pinterest_auth.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            pinterest_auth.STATE_PATH.write_text(json.dumps({"refresh_token_enc": enc, "secret_fingerprint": fp}), encoding="utf-8")
+        with mock.patch.object(http, "request", side_effect=self.stale()) as req,                 mock.patch.object(pinterest_auth, "_resync_state", side_effect=resync) as rs:
+            with self.assertRaises(pinterest_auth.PinterestAuthError) as cm:
+                pinterest_auth.refresh()
+        self.assertEqual((req.call_count, rs.call_count), (2, 1))
+        self.assertIn("after a retry", str(cm.exception))
+
+    def test_resync_only_touches_git_in_ci(self):
+        with mock.patch("subprocess.run") as run:
+            with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}):
+                pinterest_auth._resync_state()
+            self.assertEqual(run.call_count, 0)
+            with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}):
+                pinterest_auth._resync_state()
+            self.assertEqual(run.call_args.args[0], ["git", "pull", "--rebase", "origin", "main"])
+
     def test_not_configured_is_a_clear_error(self):
         with mock.patch.dict(os.environ, {"PINTEREST_STATE_KEY": ""}):
             with self.assertRaises(pinterest_auth.PinterestAuthError) as cm:
@@ -731,6 +785,11 @@ class OauthTool(unittest.TestCase):
         self.assertEqual(t.decrypt(blob, priv), msg)
         self.assertEqual(t.SCOPES, ["boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"])
         self.assertEqual(pinterest_auth.REQUIRED_SCOPES, t.SCOPES)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PINTEREST_API_BASE", None)
+            self.assertEqual(t.token_url(), "https://api.pinterest.com/v5/oauth/token")
+        with mock.patch.dict(os.environ, {"PINTEREST_API_BASE": "https://api-sandbox.pinterest.com"}):
+            self.assertEqual(t.token_url(), "https://api-sandbox.pinterest.com/v5/oauth/token")
 
 
 if __name__ == "__main__":

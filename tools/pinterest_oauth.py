@@ -24,7 +24,12 @@ from urllib.parse import quote, urlencode
 
 SCOPES = ["boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"]
 AUTHORIZE = "https://www.pinterest.com/oauth/"
-TOKEN = "https://api.pinterest.com/v5/oauth/token"
+def token_url():
+    """Production by default. Trial-access apps may only write to the SANDBOX API, whose tokens are separate
+    (a production token does not work there): set PINTEREST_API_BASE=https://api-sandbox.pinterest.com for the exchange."""
+    return (os.environ.get("PINTEREST_API_BASE") or "https://api.pinterest.com") + "/v5/oauth/token"
+
+
 BEGIN, END = "===ENCRYPTED===", "===END==="
 
 
@@ -79,7 +84,7 @@ def cmd_url(args):
 def cmd_exchange(args):
     import requests
     resp = requests.post(
-        TOKEN, auth=(os.environ["PINTEREST_APP_ID"], os.environ["PINTEREST_APP_SECRET"]),
+        token_url(), auth=(os.environ["PINTEREST_APP_ID"], os.environ["PINTEREST_APP_SECRET"]),
         data={"grant_type": "authorization_code", "code": os.environ["PINTEREST_OAUTH_CODE"],
               "redirect_uri": os.environ["PINTEREST_REDIRECT_URI"]}, timeout=60)
     if not resp.ok:

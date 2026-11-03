@@ -106,6 +106,19 @@ def _persist(state, used_token, data):
     return new
 
 
+def _refresh_request(token):
+    return http.request("POST", f"{api_base()}/v5/oauth/token", "pinterest-token",
+                        headers=_basic_auth(), data={"grant_type": "refresh_token", "refresh_token": token})
+
+
+def _resync_state():
+    """Pull the latest state/pinterest_token.json from the branch (CI only; a local checkout is left alone)."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    import subprocess
+    subprocess.run(["git", "pull", "--rebase", "origin", os.environ["GITHUB_REF_NAME"]], check=False)
+
+
 def refresh():
     """Refresh the access token. Returns (access_token, state). Raises PinterestAuthError."""
     missing = [n for n in REQUIRED_ENV if not os.environ.get(n)]
@@ -115,11 +128,25 @@ def refresh():
     used = current_refresh_token(state)
     http.register_secret(used)
     try:
-        resp = http.request("POST", f"{api_base()}/v5/oauth/token", "pinterest-token",
-                            headers=_basic_auth(), data={"grant_type": "refresh_token", "refresh_token": used})
+        resp = _refresh_request(used)
     except http.ApiError as exc:
-        raise PinterestAuthError(f"Pinterest token refresh failed (re-run the one-time OAuth if the refresh "
-                                 f"token expired or was revoked): {exc}") from None
+        # Overlapping runs: another run may have just rotated the refresh token (making ours stale) and pushed
+        # the new one. Re-read the stored state once; retry only if it now holds a DIFFERENT token.
+        _resync_state()
+        state = load_state()
+        newer = current_refresh_token(state)
+        if newer == used:
+            raise PinterestAuthError(f"Pinterest token refresh failed (re-run the one-time OAuth if the refresh "
+                                     f"token expired or was revoked): {exc}") from None
+        print("  (Pinterest refresh token was replaced by an overlapping run; retrying once with the stored one)")
+        used = newer
+        http.register_secret(used)
+        try:
+            resp = _refresh_request(used)
+        except http.ApiError as exc2:
+            raise PinterestAuthError(f"Pinterest token refresh failed after a retry with the newest stored token "
+                                     f"(re-run the one-time OAuth if the refresh token expired or was revoked): "
+                                     f"{exc2}") from None
     data = resp.json()
     http.register_secret(data.get("access_token"))
     granted = set(str(data.get("scope", "")).replace(",", " ").split())
