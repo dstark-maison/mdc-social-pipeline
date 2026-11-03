@@ -1,13 +1,10 @@
-# READ-ONLY. Lists the IG account's published media and matches it against the
-# legacy drafts (see tools/ig_media_audit.py). Posts nothing, commits nothing.
-
 name: Social IG Audit
 
 on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -17,12 +14,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install requests Pillow
-      - name: Audit
+      - run: pip install requests cryptography
+      - name: Probe
         env:
-          ACCESS_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
-          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
-          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
-        run: python tools/ig_media_audit.py
+          PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+          PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+          PINTEREST_REFRESH_TOKEN: ${{ secrets.PINTEREST_REFRESH_TOKEN }}
+          PINTEREST_STATE_KEY: ${{ secrets.PINTEREST_STATE_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: python tools/pin_probe.py
