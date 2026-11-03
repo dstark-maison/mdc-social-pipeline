@@ -35,6 +35,33 @@ def _call_claude(system_prompt, user_prompt, model, max_tokens=1000):
     return re.sub(r"^```json\s*|\s*```$", "", text)
 
 
+# --- Environmental / eco claims (claims-policy rule 4, EU 2024/825) --------------------------------------------------
+# The prompt forbids them, but a prompt is not a gate: this check runs on every generated caption and hashtag.
+ENV_CLAIM_RE = re.compile(
+    r"nachhaltig|umweltfreundlich|umweltschonend|umweltbewusst|ressourcenschonend|\böko(?!-?tex)|ökologisch|klimaneutral|recycel|recycling|biologisch abbaubar|\bbio(?:-\w+)?\b|"
+    r"sustainab|eco[- ]?friendl|eco[- ]?conscious|eco[- ]?responsible|environmentally[- ](?:friendly|conscious|responsible)|\bgreener\b|\beco\b|\borganic|\brecycl|biodegrad|carbon[- ]neutral|"
+    r"écologi|écoresponsable|durabilit|\bduurzaam|milieuvriendelijk",
+    re.I,
+)
+_STANDARD_RE = re.compile(r"oeko[- ]?tex|öko[- ]?tex", re.I)
+
+
+def find_env_claim(text):
+    """First environmental claim term in `text` (OEKO-TEX name ignored), or None."""
+    m = ENV_CLAIM_RE.search(_STANDARD_RE.sub(" ", text or ""))
+    return m.group(0) if m else None
+
+
+def env_claims_in_post(post):
+    """Offending terms in a generated {caption, hashtags} post."""
+    hits = []
+    for field, text in [("caption", post.get("caption", ""))] + [("hashtag #" + h, h) for h in post.get("hashtags", [])]:
+        term = find_env_claim(text)
+        if term:
+            hits.append((field, term))
+    return hits
+
+
 def generate_instagram_caption(article, model):
     """Draft a caption + hashtags from the blog article."""
     brand_voice = BRAND_VOICE_PATH.read_text() if BRAND_VOICE_PATH.exists() else ""
@@ -53,7 +80,9 @@ the bio link (captions cannot contain clickable links). End with a plain
 market) — do not include the URL itself in the caption.
 
 Never write health or allergy claims (hypoallergenic, allergikerfreundlich,
-antibakteriell …), certification claims (OEKO-TEX, GOTS, Down Pass …), or
+antibakteriell …), environmental or eco claims (nachhaltig, umweltfreundlich,
+sustainable, eco-friendly, organic/bio, recycled, klimaneutral …; also not as
+hashtags), certification claims (OEKO-TEX, GOTS, Down Pass …), or
 statements that we stock or sell a product that is not part of the post's
 content. Stay with what the post itself states.
 
@@ -67,7 +96,19 @@ without the # symbol (added later), mixing brand/niche/broad tags."""
         f"Title: {article['title']}\n\nContent:\n"
         f"{article.get('summary') or article.get('body', '')[:3000]}"
     )
-    return json.loads(_call_claude(system_prompt, user_prompt, model))
+    post = json.loads(_call_claude(system_prompt, user_prompt, model))
+    hits = env_claims_in_post(post)
+    if hits:  # one retry that names the offending terms, then fail loudly: a draft with an eco claim must never reach approval
+        terms = ", ".join(f"{t!r} in {f}" for f, t in hits)
+        post = json.loads(_call_claude(
+            system_prompt,
+            user_prompt + chr(10) * 2 + f"Your previous draft used environmental claim wording ({terms}). Rewrite without any environmental or eco claim, including hashtags.",
+            model,
+        ))
+        hits = env_claims_in_post(post)
+        if hits:
+            raise ValueError("Instagram draft contains environmental claim wording: " + ", ".join(f"{t!r} in {f}" for f, t in hits))
+    return post
 
 
 # --- Facebook ---------------------------------------------------------------
