@@ -13,6 +13,11 @@ on:
         description: "Optional: draft exactly this article (NUMERIC Shopify id). Empty = normal run (only articles published after DRAFT_CUTOFF)."
         required: false
         type: string
+      force_removed:
+        description: "Only with article_id: draft it again although a channel was REMOVED manually by the owner (this one article only)."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write  # commit drafts, images, ledger
@@ -47,4 +52,5 @@ jobs:
           RESEND_FROM: ${{ secrets.RESEND_FROM_IG }}
           RESEND_TO: ${{ secrets.RESEND_TO }}
           ARTICLE_ID: ${{ inputs.article_id }}
+          FORCE_REMOVED: ${{ inputs.force_removed }}
         run: python draft.py

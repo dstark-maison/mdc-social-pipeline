@@ -57,13 +57,18 @@ def channels_to_draft(article_id, ledger_data):
             not in (ledger.PUBLISHED, ledger.PUBLISHING)]
 
 
-def check_explicit(article_id, article, ledger_data, hold=None):
+def check_explicit(article_id, article, ledger_data, hold=None, force_removed=False):
     """Raises if an on-request draft must not go ahead; returns the channels to draft."""
     hold = config.HOLD_ARTICLE_IDS if hold is None else hold
     if article_id in hold:
         raise RuntimeError(f"Article {article_id} is on hold: {hold[article_id]}")
     if not article["isPublished"]:
         raise RuntimeError(f"Article {article_id} is not published")
+    removed = [c for c in CHANNELS
+               if (ledger.get(ledger_data, article_id, c) or {}).get("status") == ledger.REMOVED]
+    if removed and not force_removed:
+        raise RuntimeError(f"Article {article_id} was removed manually by the owner on {', '.join(removed)}; "
+                           "not drafting it again. To force it for this one article: Social Draft with force_removed=true.")
     channels = channels_to_draft(article_id, ledger_data)
     if not channels:
         raise RuntimeError(f"Article {article_id} is already published (or mid-publish) on every channel; "
@@ -125,6 +130,7 @@ def process(article, model, channels=CHANNELS):
                 status=ledger.DRAFT, article_id=article_id, handle=article["handle"],
                 post_id=None, url=None, container_id=None, timestamp=ledger.now(),
             )
+            data[article_id][channel].pop("note", None)  # e.g. 'removed manually' from an earlier post
 
     files = {ledger.draft_path(article_id, c): ledger.draft_text(d) for c, d in drafts.items()}
     data = ledger.update(mutate, f"Draft {article_id} ({article['handle']}, {'+'.join(drafts)}) [skip ci]", files)
@@ -154,7 +160,8 @@ def main():
             if not re.fullmatch(r"[0-9]+", target):
                 raise ValueError(f"article_id must be the NUMERIC Shopify id, got {target!r}")
             article = blog.fetch_article(target)
-            queue = [(article, check_explicit(target, article, ledger.load()))]
+            queue = [(article, check_explicit(target, article, ledger.load(),
+                                              force_removed=os.environ.get("FORCE_REMOVED") == "true"))]
         else:
             articles = blog.fetch_recent_articles(os.environ["SHOPIFY_BLOG_HANDLE"])
             queue = [(a, list(CHANNELS)) for a in select_new_articles(articles, ledger.load())]

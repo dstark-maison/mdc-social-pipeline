@@ -29,6 +29,11 @@ on:
         description: "Reddit only: the URL of the post you made by hand (https://www.reddit.com/r/MaisonDeCocon/comments/...). article = the Reddit draft id from the email."
         required: false
         type: string
+      force:
+        description: "Re-publish an entry that was REMOVED manually by the owner (otherwise it is refused)"
+        required: false
+        type: boolean
+        default: false
       test_bad_token:
         description: "Test: run with an invalid Meta token to prove the failure email"
         required: false
@@ -78,6 +83,7 @@ jobs:
           RESEND_FROM: ${{ secrets.RESEND_FROM_IG }}
           RESEND_TO: ${{ secrets.RESEND_TO }}
           REDDIT_URL: ${{ inputs.url }}
+          FORCE_REMOVED: ${{ inputs.force }}
           REDDIT_ARTIFACT_KEY: ${{ secrets.REDDIT_ARTIFACT_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         run: python publish.py

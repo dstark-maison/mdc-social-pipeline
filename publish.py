@@ -60,6 +60,29 @@ def do_reject(article_id, channel):
     return f"- `{channel}`: draft rejected."
 
 
+OTHER_CHANNEL_TEXT = {
+    ledger.DRAFT: "still a draft, not approved, use '{CH} only' to post it",
+    ledger.PUBLISHED: "already published → {url}",
+    ledger.REMOVED: "removed manually by the owner, will not be re-published",
+    ledger.REJECTED: "rejected, will not be published",
+    ledger.PUBLISHING: "publish started but never verified, needs a manual check",
+}
+
+
+def other_channel_lines(article_id, handled):
+    """One line per Instagram/Facebook channel of the article that this action did NOT touch, so a
+    partial approval (e.g. 'IG only') can never leave the other channel unnoticed."""
+    entries = ledger.load().get(article_id, {})
+    out = []
+    for ch in ledger.CHANNEL_ORDER:
+        entry = entries.get(ch)
+        if ch in handled or not entry:
+            continue
+        text = OTHER_CHANNEL_TEXT.get(entry["status"], f"status `{entry['status']}`")
+        out.append(f"- `{ch}`: " + text.format(CH=ch.upper(), url=entry.get("url")))
+    return ("\n\n**Other channels of this article**\n\n" + "\n".join(out)) if out else ""
+
+
 class Blocked(RuntimeError):
     """The approval cannot proceed. Reported like any other failure (email + issue comment)."""
 
@@ -255,6 +278,10 @@ def do_approve(article_id, channel):
             "it could double-post.\n\n" + ledger.stuck_entry_help(article_id, channel, entry))
     if entry["status"] == ledger.REJECTED:
         raise Blocked("This draft was rejected; it will not be published.")
+    if entry["status"] == ledger.REMOVED and os.environ.get("FORCE_REMOVED") != "true":
+        raise Blocked(f"`{channel}` of {article_id} was removed manually by the owner; it is not re-published. "
+                      f"To force it: Actions -> Social Publish -> article={article_id}, channel={channel}, force=true "
+                      "(or re-draft it with Social Draft, force_removed=true).")
 
     draft = ledger.read_draft(article_id, channel)
     # Never use a stored URL: build it from the CURRENT repo name (renames break old ones).
@@ -316,7 +343,7 @@ def main():
     if action == "reject":
         for ch in channels:
             lines.append(do_reject(article_id, ch))
-        write_result(f"**Reject `{name}`**\n\n" + "\n".join(lines))
+        write_result(f"**Reject `{name}`**\n\n" + "\n".join(lines) + other_channel_lines(article_id, channels))
         return
 
     if "reddit" in channels:
@@ -356,7 +383,8 @@ def main():
                 line += f"\n  - (failure email also failed: {http.redact(mail_exc)})"
         lines.append(line)
 
-    write_result(f"**{'⚠️ Approve' if failed else '✅ Approve'} `{name}`**\n\n" + "\n".join(lines))
+    write_result(f"**{'⚠️ Approve' if failed else '✅ Approve'} `{name}`**\n\n" + "\n".join(lines)
+                 + other_channel_lines(article_id, channels))
     if failed:
         sys.exit(1)
 
