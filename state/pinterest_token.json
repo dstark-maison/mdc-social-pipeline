@@ -1,0 +1,7 @@
+{
+  "refresh_expires_at": "2027-01-02T08:47:30+00:00",
+  "refresh_token_enc": "gAAAAABq6Z-iUWdiEv5A-qEHD69BRv59tErUW0TE657Y1j0aM252VHkcTNc7wjd4QjMZGEN9_BpepKMBpa1MT9tiOOycAAdx9UKBZDOeEoN0iJk7vDVvH9RfY_ev-ngMM7BJB2p1tu6kNbywncfK9pMuV4pg99S2vvzpM7q6NWsIovGEHvFR66p6WnhrGkLpZ18P48dHNiOlE35bhBesM6641sEadXF0fLGY0gnxUf_kTida5YcfIWSeKD1ka49urVqjeZ6upmL53OsQDBQ97MdHWHPdRB5qpVYLIlKqhHZFAe3j1GGWAv9yDospROYJxcgG-BkT_p90Yhtj3bZR04PwXDe0vVaBnI5l5isc3OWIfODCC_ZJwMfwyJT1OGjoAsA-jJgGP7jc5UslRz7sTWL-fFub1mJsyEqr09HP_GzYPdmDzPi8iTYJ-jby0_3W-pYEGe7qVT-gicUiclt22RAQJr5LwxahCk52To7slzV39UD-UcUcHfYTo7fP3eB5ZlATFoXXhhLz7T1lVk6Wo-_6wP0_cNMWOUk2qND-ljzR6n3wVqbPJM9_4wdTcLLINzwYGMrz3GjtGy9_pAoSk4XtAzgMVwUuQGSUVsl7D4kid-JSdF1jPt4vU6ZUq1Y1PGdB2Dfx4emuqelBjDtupLoDFMSFVoaUzoQGW1aAMOwGoiGvCOTBQHS9QNC2eO2A9U7_SnO_bsU5yOkvorIPBauoVkpz5EOxGmh44fFRtCtFa2GS8CVC6YGPLWlFCwuz3QOkT_FMpBxZIbKeXkhlv134c-wdnNOQeg==",
+  "refreshed_at": "2026-11-03T08:47:30+00:00",
+  "scope": "boards:read boards:write pins:read pins:write user_accounts:read",
+  "secret_fingerprint": "7e7ba2e66b87dc38"
+}
