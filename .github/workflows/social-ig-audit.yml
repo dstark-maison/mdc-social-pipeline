@@ -23,4 +23,4 @@ jobs:
           PINTEREST_STATE_KEY: ${{ secrets.PINTEREST_STATE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: python tools/pin_probe.py
+        run: PYTHONPATH=. python tools/pin_probe.py
