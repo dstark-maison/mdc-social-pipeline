@@ -26,7 +26,7 @@ from pathlib import Path
 from core import approval, config, http, ledger
 
 STATE_PATH = Path("state/pinterest_token.json")
-REQUIRED_SCOPES = ["boards:read", "pins:read", "pins:write", "user_accounts:read"]
+REQUIRED_SCOPES = ["boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"]
 REQUIRED_ENV = ["PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "PINTEREST_REFRESH_TOKEN", "PINTEREST_STATE_KEY"]
 WARN_EVERY = timedelta(days=7)
 PERSIST_IF_EXPIRY_MOVED = timedelta(days=3)

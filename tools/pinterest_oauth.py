@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-SCOPES = ["boards:read", "pins:read", "pins:write", "user_accounts:read"]
+SCOPES = ["boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"]
 AUTHORIZE = "https://www.pinterest.com/oauth/"
 TOKEN = "https://api.pinterest.com/v5/oauth/token"
 BEGIN, END = "===ENCRYPTED===", "===END==="

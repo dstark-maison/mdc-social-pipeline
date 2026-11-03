@@ -137,7 +137,7 @@ class AuthBase(tp.InTmp):
         self.addCleanup(pinterest_auth._cache.clear)
         self.addCleanup(http._runtime_secrets.clear)
 
-    def token_response(self, refresh="pinr-secret-token-111", scope="boards:read,pins:read,pins:write,user_accounts:read",
+    def token_response(self, refresh="pinr-secret-token-111", scope="boards:read,boards:write,pins:read,pins:write,user_accounts:read",
                        expires_in=5184000, access="pina-access-token-xyz"):
         return FakeResp({"access_token": access, "refresh_token": refresh, "scope": scope, "expires_in": 2592000,
                          "refresh_token_expires_in": expires_in})
@@ -702,6 +702,20 @@ class DailyPublisher(AuthBase):
         self.assertEqual(backfill.select(arts, {}), [])
 
 
+    def test_every_daunendecken_article_is_held_from_the_backfill_but_not_from_ig_fb(self):
+        from core import boards
+        self.assertEqual(len(config.PIN_BACKFILL_HOLD_IDS), 11)
+        for aid, handle in config.PIN_BACKFILL_HOLD_IDS.items():
+            self.assertEqual(boards.classify(aid, handle), "Daunendecken", handle)   # the list IS the Daunendecken set
+            self.assertNotIn(aid, config.HOLD_ARTICLE_IDS)                           # IG/FB hold list untouched
+            arts = [{"id": f"gid://shopify/Article/{aid}", "handle": handle, "title": "t", "isPublished": True,
+                     "publishedAt": "2026-01-01T00:00:00Z"}]
+            self.assertEqual(backfill.select(arts, {}), [], handle)
+        other = [{"id": "gid://shopify/Article/751558000000", "handle": "bedding-colors-for-bedrooms", "title": "t",
+                  "isPublished": True, "publishedAt": "2026-01-01T00:00:00Z"}]
+        self.assertEqual(len(backfill.select(other, {})), 1)                         # unheld articles still backfill
+
+
 class OauthTool(unittest.TestCase):
     def test_encrypted_roundtrip_and_authorize_url(self):
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
@@ -715,7 +729,7 @@ class OauthTool(unittest.TestCase):
         blob = t.encrypt(msg, pub)
         self.assertNotIn("pinr_", blob)
         self.assertEqual(t.decrypt(blob, priv), msg)
-        self.assertEqual(t.SCOPES, ["boards:read", "pins:read", "pins:write", "user_accounts:read"])
+        self.assertEqual(t.SCOPES, ["boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"])
         self.assertEqual(pinterest_auth.REQUIRED_SCOPES, t.SCOPES)
 
 

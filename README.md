@@ -98,7 +98,7 @@ tracks, you post by hand.
 - **Trial access** creates Sandbox pins visible only to the app owner; `PINTEREST_API_BASE` can point at the sandbox host.
 
 ### Pinterest tokens (no manual renewals)
-One-time OAuth (`tools/pinterest_oauth.py`, scopes `boards:read pins:read pins:write user_accounts:read`) puts the refresh token in
+One-time OAuth (`tools/pinterest_oauth.py`, scopes `boards:read boards:write pins:read pins:write user_accounts:read`) puts the refresh token in
 the secret `PINTEREST_REFRESH_TOKEN`. From then on the pipeline refreshes access tokens itself (`core/pinterest_auth.py`), at the
 start of every Pinterest run and weekly (*Social Pinterest Token*). If Pinterest rotates the refresh token, the new one is stored
 **encrypted** in `state/pinterest_token.json` (key = secret `PINTEREST_STATE_KEY`; a workflow cannot rewrite a secret). An email goes

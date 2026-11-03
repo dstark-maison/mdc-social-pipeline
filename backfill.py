@@ -37,7 +37,7 @@ def open_backfill_pins(ledger_data):
 
 def select(articles, ledger_data, hold=None, limit=config.PIN_WEEKLY_MAX):
     """Published, un-held articles with no pin entry, newest first."""
-    hold = config.HOLD_ARTICLE_IDS if hold is None else hold
+    hold = (set(config.HOLD_ARTICLE_IDS) | set(config.PIN_BACKFILL_HOLD_IDS)) if hold is None else hold
     picked = [a for a in articles
               if a["isPublished"] and a.get("publishedAt")
               and ledger.numeric_id(a["id"]) not in hold
