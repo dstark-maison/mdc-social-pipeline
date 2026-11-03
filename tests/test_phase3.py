@@ -725,7 +725,7 @@ class OauthTool(unittest.TestCase):
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         pub = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
         priv = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
-        msg = json.dumps({"refresh_token": "pinr_" + "x" * 150})
+        msg = json.dumps({"refresh_token": "pinr_" + "x" * 1500, "scope": "a,b"})   # far beyond one RSA block
         blob = t.encrypt(msg, pub)
         self.assertNotIn("pinr_", blob)
         self.assertEqual(t.decrypt(blob, priv), msg)

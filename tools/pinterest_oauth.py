@@ -35,15 +35,22 @@ def _oaep():
 
 
 def encrypt(text, pubkey_pem):
+    """Hybrid: a fresh Fernet key encrypts the text; RSA-OAEP wraps that key. (Plain RSA-OAEP cannot hold a
+    full token response.) Output: <b64 wrapped key>.<fernet token>"""
+    from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import serialization
     key = serialization.load_pem_public_key(pubkey_pem.encode())
-    return base64.b64encode(key.encrypt(text.encode(), _oaep())).decode()
+    fkey = Fernet.generate_key()
+    wrapped = base64.b64encode(key.encrypt(fkey, _oaep())).decode()
+    return wrapped + "." + Fernet(fkey).encrypt(text.encode()).decode()
 
 
-def decrypt(b64, private_pem):
+def decrypt(blob, private_pem):
+    from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import serialization
     key = serialization.load_pem_private_key(private_pem.encode(), password=None)
-    return key.decrypt(base64.b64decode(b64), _oaep()).decode()
+    wrapped, token = blob.strip().split(".", 1)
+    return Fernet(key.decrypt(base64.b64decode(wrapped), _oaep())).decrypt(token.encode()).decode()
 
 
 def emit(text):
