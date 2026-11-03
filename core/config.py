@@ -46,3 +46,28 @@ HOLD_ARTICLE_IDS = {
     "751689728333": "bamboo-tencel-down-pillow: claims about down pillows; catalog has no down products",
     "751536243021": "bedding-certification-meaning-explained: Down Pass section; catalog has no down products",
 }
+
+
+# --- Pinterest ---------------------------------------------------------------
+# The backfill (weekly drafts of all existing articles) and the daily scheduled
+# publisher stay OFF until Pinterest approves Standard access. New-article pins
+# (one per post, approved from the draft email) work on Trial as well.
+PINTEREST_STANDARD_ACCESS = False
+# Excluded from the BACKFILL only (IG/FB are not affected): every article the board mapping sends to "Daunendecken".
+# The catalog has no down products, so these stay out until the owner releases them. {numeric id: handle}
+PIN_BACKFILL_HOLD_IDS = {
+    "751094071629": "buying-duvets-goose-down-duck-down-and-the-right-warmth",
+    "751137620301": "down-vs-synthetic-duvet",
+    "751187165517": "summer-duvet-vs-winter-duvet",
+    "751231336781": "down-vs-feather-vs-microfiber-pillow",
+    "751488762189": "duck-vs-goose-down",
+    "751550890317": "duvet-for-two-people",
+    "751722266957": "layering-duvets-for-winter",
+    "751748186445": "duvet-sizes-for-every-bed",
+    "751835742541": "how-to-care-for-a-duvet",
+    "751950594381": "when-to-replace-a-duvet",
+    "752138125645": "children-s-duvet-sizes",
+}
+PIN_DAILY_CAP = 3          # max pins published per day (backfill schedule + daily publisher)
+PIN_WEEKLY_MAX = 21        # 3 per day x 7 days = one weekly backfill batch
+PIN_REFRESH_WARN_DAYS = 30  # email when the refresh token has fewer days left than this

@@ -66,3 +66,38 @@ def fetch_article(article_id):
     if not data["article"]:
         raise RuntimeError(f"No article with id {article_id}")
     return data["article"]
+
+
+def german_texts(article_id):
+    """German title / summary / body from Shopify translations, or {} (no translation, or the app
+    lacks read_translations: callers then fall back to writing German from the source text)."""
+    try:
+        data = shopify_client.graphql(
+            """query($id: ID!) { article(id: $id) { translations(locale: "de") { key value } } }""",
+            {"id": f"gid://shopify/Article/{article_id}"},
+        )
+        return {t["key"]: t["value"] for t in (data["article"] or {}).get("translations", [])}
+    except Exception as exc:
+        print(f"  (no German translation available: {str(exc)[:120]})")
+        return {}
+
+
+def fetch_all_articles(blog_handle):
+    """Every article of the blog (published or not), oldest page first."""
+    query = """
+    query($q: String!, $after: String) {
+      blogs(first: 1, query: $q) { nodes { articles(first: 50, after: $after) {
+        nodes { id title handle publishedAt isPublished summary body image { url } }
+        pageInfo { hasNextPage endCursor } } } }
+    }"""
+    out, after = [], None
+    while True:
+        data = shopify_client.graphql(query, {"q": f"handle:{blog_handle}", "after": after})
+        blogs = data["blogs"]["nodes"]
+        if not blogs:
+            raise RuntimeError(f"Blog handle '{blog_handle}' not found or no access")
+        page = blogs[0]["articles"]
+        out += page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
+            return out
+        after = page["pageInfo"]["endCursor"]

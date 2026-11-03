@@ -13,6 +13,11 @@ on:
         description: "Optional: draft exactly this article (NUMERIC Shopify id). Empty = normal run (only articles published after DRAFT_CUTOFF)."
         required: false
         type: string
+      channels:
+        description: "Optional: channels to draft, comma separated (ig,fb,pin). Default: all three."
+        required: false
+        type: string
+        default: "ig,fb,pin"
 
 permissions:
   contents: write  # commit drafts, images, ledger
@@ -32,7 +37,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests Pillow
+        run: pip install requests Pillow cryptography
 
       - name: Run draft
         env:
@@ -47,4 +52,9 @@ jobs:
           RESEND_FROM: ${{ secrets.RESEND_FROM_IG }}
           RESEND_TO: ${{ secrets.RESEND_TO }}
           ARTICLE_ID: ${{ inputs.article_id }}
+          DRAFT_CHANNELS: ${{ inputs.channels }}
+          PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+          PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+          PINTEREST_REFRESH_TOKEN: ${{ secrets.PINTEREST_REFRESH_TOKEN }}
+          PINTEREST_STATE_KEY: ${{ secrets.PINTEREST_STATE_KEY }}
         run: python draft.py

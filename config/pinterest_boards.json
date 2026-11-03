@@ -1,0 +1,21 @@
+{
+  "_comment": "Article topic -> Pinterest board. Rules are evaluated in order on the hyphen-separated tokens of the article handle; the first rule with a matching phrase (and no excluded phrase) wins. 'overrides' ({numeric article id: board}) beat the rules. Board names must match the boards on Pinterest EXACTLY; ids are resolved via the API at runtime.",
+  "boards": [
+    "Bambus-Bettwäsche",
+    "Tencel-Bettwäsche",
+    "Daunendecken",
+    "Betten & Schlafzimmer",
+    "Schlafwissen"
+  ],
+  "default": "Schlafwissen",
+  "rules": [
+    {"board": "Bambus-Bettwäsche", "any": ["bamboo", "bambus"]},
+    {"board": "Tencel-Bettwäsche", "any": ["tencel", "lyocell"]},
+    {"board": "Daunendecken", "any": ["duvet", "duvets", "down", "daunen", "daunendecke", "goose", "duck", "bettdecke"]},
+    {"board": "Schlafwissen", "any": ["temperature", "humidity", "sweats", "sleeper", "sleepers", "sleeping", "sleep"]},
+    {"board": "Betten & Schlafzimmer",
+     "any": ["bed", "beds", "bedroom", "bedrooms", "boxspring", "box spring", "headboard", "mattress", "mattresses", "slatted", "bedspread", "throw", "cushion", "cushions", "quiet luxury"],
+     "exclude": ["bed linen", "bed sheets"]}
+  ],
+  "overrides": {}
+}

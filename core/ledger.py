@@ -11,6 +11,7 @@ Statuses:
   rejected    rejected in the approval step
   paused      (Reddit only) parked while the Reddit channel is paused; not published, not rejected
   approved    (Reddit only) approved; the owner posts it by hand and submits the URL -> published
+  scheduled   (Pinterest backfill only) approved; the daily job publishes it on `publish_on`
 """
 
 import json
@@ -25,8 +26,9 @@ DRAFTS_DIR = Path("state/drafts")
 DRAFT, PUBLISHING, PUBLISHED, REJECTED = "draft", "publishing", "published", "rejected"
 PAUSED = "paused"      # Reddit only: parked while the channel is paused; neither posted nor rejected
 APPROVED = "approved"  # Reddit only: approved, waiting for the owner to post it manually and send the URL back
-PLATFORM_NAMES = {"ig": "the Instagram feed", "fb": "the Facebook Page", "reddit": "r/MaisonDeCocon"}
-CHANNEL_ORDER = ("ig", "fb")
+PLATFORM_NAMES = {"ig": "the Instagram feed", "fb": "the Facebook Page", "reddit": "r/MaisonDeCocon", "pin": "Pinterest"}
+SCHEDULED = "scheduled"  # Pinterest backfill: approved, published later by the daily job (<= PIN_DAILY_CAP a day)
+CHANNEL_ORDER = ("ig", "fb")  # channels listed in the "Pending approvals" section (Pinterest has its own email)
 
 
 def numeric_id(gid):
