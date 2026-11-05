@@ -38,17 +38,20 @@ def _call_claude(system_prompt, user_prompt, model, max_tokens=1000):
 # --- Environmental / eco claims (claims-policy rule 4, EU 2024/825) --------------------------------------------------
 # The prompt forbids them, but a prompt is not a gate: this check runs on every generated caption and hashtag.
 ENV_CLAIM_RE = re.compile(
-    r"nachhaltig|umweltfreundlich|umweltschonend|umweltbewusst|ressourcenschonend|\böko(?!-?tex)|ökologisch|klimaneutral|recycel|recycling|biologisch abbaubar|\bbio(?:-\w+)?\b|"
+    r"nachhaltig|umweltfreundlich|umweltschonend|umweltbewusst|ressourcenschonend|\böko(?!-?tex)|ökologisch|klimaneutral|recycel|recycling|biologisch|\bbio(?:-\w+)?\b|"
     r"sustainab|eco[- ]?friendl|eco[- ]?conscious|eco[- ]?responsible|environmentally[- ](?:friendly|conscious|responsible)|\bgreener\b|\beco\b|\borganic|\brecycl|biodegrad|carbon[- ]neutral|"
     r"écologi|écoresponsable|durabilit|\bduurzaam|milieuvriendelijk",
     re.I,
 )
 _STANDARD_RE = re.compile(r"oeko[- ]?tex|öko[- ]?tex", re.I)
+# "bio" as short for "biography/profile" in the mandated call to action ("Link in bio", "Link in der Bio", "Bio-Link") is not a
+# claim. Only these exact phrases are exempt; "Bio-Baumwolle", "biologisch", "Bio-Qualität" etc. still block.
+_BIO_LINK_RE = re.compile(r"\b(?:link\s+(?:in|in\s+der|in\s+meiner|in\s+unserer)\s+bio|in\s+der\s+bio|bio[- ]?link)\b(?!-\w)", re.I)
 
 
 def find_env_claim(text):
-    """First environmental claim term in `text` (OEKO-TEX name ignored), or None."""
-    m = ENV_CLAIM_RE.search(_STANDARD_RE.sub(" ", text or ""))
+    """First environmental claim term in `text` (OEKO-TEX name and the "Link in bio" call to action ignored), or None."""
+    m = ENV_CLAIM_RE.search(_BIO_LINK_RE.sub(" ", _STANDARD_RE.sub(" ", text or "")))
     return m.group(0) if m else None
 
 
@@ -77,12 +80,17 @@ You will be given a blog post's title and content. Write the caption in
 German. Write a companion Instagram caption that teases the post and drives readers to read more via
 the bio link (captions cannot contain clickable links). End with a plain
 "Link in bio" call to action (in German, matching the brand's primary
-market) — do not include the URL itself in the caption.
+market) — do not include the URL itself in the caption. "bio" may appear
+ONLY in that call to action.
 
 Never write health or allergy claims (hypoallergenic, allergikerfreundlich,
 antibakteriell …), environmental or eco claims (nachhaltig, umweltfreundlich,
-sustainable, eco-friendly, organic/bio, recycled, klimaneutral …; also not as
-hashtags), certification claims (OEKO-TEX, GOTS, Down Pass …), or
+sustainable, eco-friendly, organic/bio, biologisch, recycled, klimaneutral …;
+also not as hashtags) — not even when they sound like a product feature or
+the article mentions them, unless the article itself names a specific
+certification for it (then use that certification's name only, no general
+"eco" wording), certification claims (OEKO-TEX, GOTS, Down Pass …) that the
+article does not itself state, or
 statements that we stock or sell a product that is not part of the post's
 content. Stay with what the post itself states.
 

@@ -19,6 +19,18 @@ class FindEnvClaim(unittest.TestCase):
             # 'Biomasse' must not trip the bio rule (word-boundary), 'economy'/'ecosystem' must not trip eco
             self.assertIsNone(copy.find_env_claim(text), text)
 
+    def test_link_in_bio_phrases_are_exempt(self):
+        for text in ["Mehr dazu im Artikel. Link in bio.", "Link in Bio", "Link in der Bio", "Den Artikel findest du über den Bio-Link.", "Alles Wichtige – Link in der bio!"]:
+            self.assertIsNone(copy.find_env_claim(text), text)
+        post = {"caption": "Steppung oder Kassetten? Link in bio.", "hashtags": ["Daunendecke", "Schlafkomfort"]}
+        self.assertEqual(copy.env_claims_in_post(post), [])
+
+    def test_real_bio_claims_still_block_even_next_to_link_in_bio(self):
+        for text in ["Bio-Baumwolle", "Bio-Qualität", "biologisch angebaut", "aus Bio-Baumwolle. Link in bio.", "Link in Bio-Baumwolle",
+                     "Bio Baumwolle für dich, Link in bio", "organic cotton – link in bio"]:
+            self.assertIsNotNone(copy.find_env_claim(text), text)
+        self.assertEqual(copy.env_claims_in_post({"caption": "Link in bio.", "hashtags": ["bio"]}), [("hashtag #bio", "bio")])
+
     def test_hashtags_are_checked(self):
         hits = copy.env_claims_in_post({"caption": "Sanft und ruhig.", "hashtags": ["Bettwäsche", "nachhaltig", "Schlafzimmer"]})
         self.assertEqual(hits, [("hashtag #nachhaltig", "nachhaltig")])
