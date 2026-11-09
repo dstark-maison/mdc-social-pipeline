@@ -82,6 +82,35 @@ tracks, you post by hand.
   the post id / url. A draft can be approved for 90 days; after that its artifact is gone and the question must be re-drafted.
   Note: a workflow_dispatch input is shown on the public run page.
 
+## Campaign: Black Week + Christmas 2026 (`campaigns/peak-2026.yml`)
+
+Five German posts (Instagram + Facebook feed on 23 Nov and 1 Dec, Instagram Stories on 27 Nov, 30 Nov, 8 Dec) go through the
+normal draft -> email -> approval issue -> publish flow, driven by the manifest instead of a blog article.
+Images are Shopify Files CDN URLs (stored in the manifest), not repo files.
+
+- **Job** (`social-campaign.yml` -> `campaign_run.py`, idempotent tick at 07:00, 09:00, 09:30 and 00:05 Berlin): sweeps expired
+  posts, syncs the bio link, drafts posts due today and sends **one** confirmation email per post (ledger flag `email_sent`),
+  publishes posts that were approved earlier.
+- **Timing**: approve before 09:00 -> status `approved`, published at 09:00. Approve later the same day -> published on approval.
+  After 23:59 of the post's date -> status `expired`, never published, the approval link is refused. Approving before the
+  post's date is refused too.
+- **Ledger keys**: numeric post ids from the manifest (`9261123001` ...), channels `ig`, `fb`, `story`.
+- **Facebook** copy = the Instagram caption with "Link in der Bio." replaced by `Zum Angebot: <fb_link>` (UTM link in the manifest).
+- **Stories** (`channels/story.py`): `media_type=STORIES`, image only, no caption; container created at publish time; read back by
+  id (permalink + `media_product_type` STORY). Never touches the bio link.
+- **Bio link** (`/pages/latest-post`): 23-30 Nov -> `/collections/black-friday`, 1-25 Dec -> `/collections/weihnachtsgeschenke`,
+  from 26 Dec back to the newest blog post (ledger `_bio_link`). Each change is read back. While the campaign window is active
+  a blog publish only updates the ledger pointer, not the redirect. From 30 Dec the sync does nothing.
+- **Cancel one post**: press *Reject* in its email, or set `skip: true` in the manifest and merge (before its date).
+- **Change one post**: edit the manifest, merge, then *Actions -> Social Campaign -> Run workflow* with `action=reset`, `post=<id>`
+  (only if the draft already exists and nothing is published); the next tick drafts it again on its day.
+- **Dry run**: *Run workflow* with `action=dryrun`, `post=<id>` sends the real email marked DRY RUN (approving is refused until
+  the date); `action=reset` removes it again.
+- **Test Story**: `action=teststory` drafts the manifest's `test_story` (one neutral image, no text, not part of the
+  schedule) and emails it as `[TEST STORY]`. Approve = it goes live at once; delete it by hand in the Instagram app.
+  `action=reset`, `post=<its id>` clears a failed attempt.
+- **Ends**: the cleanup PR (BACKLOG.md) deletes the workflow; merge it on 28 Dec.
+
 ## Drafts stay approvable indefinitely
 
 - A draft is keyed by numeric article id. A newer cron/manual run never overwrites, expires or rejects the
@@ -131,7 +160,7 @@ invalid Meta token and confirm the failure email arrives (the ledger stays `draf
 
 ```
 core/       blog, copy, image, approval (email + buttons), ledger (state + git), http (error bodies, redaction)
-channels/   instagram.py   (facebook / pinterest / reddit in later phases)
+channels/   instagram.py, facebook.py, story.py, pinterest.py
 draft.py    publish.py
 tests/      python -m unittest discover -s tests -t .
 ```

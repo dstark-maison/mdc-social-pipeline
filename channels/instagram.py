@@ -8,7 +8,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from core import http, ledger, shopify_client
+from core import campaign, http, ledger, shopify_client
 
 CODE = "ig"
 GRAPH_BASE = "https://graph.facebook.com/v25.0"
@@ -174,6 +174,8 @@ def after_publish(draft, result):
     publish time, never by article date: it only matters if two approvals run
     at the same moment, so a slower run cannot overwrite a more recent publish.
     """
+    if draft.get("campaign"):
+        return "Campaign post: the bio redirect is managed by the campaign schedule, not by this publish."
     published_time = _publish_time(result)
     outcome = {}
 
@@ -191,6 +193,12 @@ def after_publish(draft, result):
         cur = outcome["lost_to"]
         return (f"Bio redirect `{os.environ['BIO_LINK_PATH']}` left unchanged: a more recent publish "
                 f"(article {cur['article_id']}, {cur['published_time']}) already owns it.")
+
+    manifest = campaign.load_manifest()
+    if campaign.override_active(manifest, campaign.now_local(manifest).date()):
+        return (f"Bio redirect `{os.environ['BIO_LINK_PATH']}` left on the campaign link: the ledger pointer now says "
+                f"article {draft['article_id']}, and the campaign schedule restores it from "
+                f"{manifest['bio_link']['reset_on']}.")
 
     target = data[ledger.BIO_KEY]["url"]  # read after the claim: the winner's URL
     try:

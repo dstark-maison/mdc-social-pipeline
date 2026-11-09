@@ -60,7 +60,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests cryptography
+        run: pip install requests cryptography pyyaml
 
       - name: Approve / reject
         id: run

@@ -23,10 +23,12 @@ LEDGER_PATH = Path("state/ledger.json")
 DRAFTS_DIR = Path("state/drafts")
 
 DRAFT, PUBLISHING, PUBLISHED, REJECTED = "draft", "publishing", "published", "rejected"
+EXPIRED = "expired"    # campaign posts only: the post's day ended without a publish; never publishable again
 PAUSED = "paused"      # Reddit only: parked while the channel is paused; neither posted nor rejected
 APPROVED = "approved"  # Reddit only: approved, waiting for the owner to post it manually and send the URL back
-PLATFORM_NAMES = {"ig": "the Instagram feed", "fb": "the Facebook Page", "reddit": "r/MaisonDeCocon"}
-CHANNEL_ORDER = ("ig", "fb")
+PLATFORM_NAMES = {"ig": "the Instagram feed", "fb": "the Facebook Page", "story": "the Instagram stories",
+                  "reddit": "r/MaisonDeCocon"}
+CHANNEL_ORDER = ("ig", "fb", "story")
 
 
 def numeric_id(gid):
@@ -66,7 +68,7 @@ def draft_path(article_id, channel):
 def write_draft(article_id, channel, draft):
     path = draft_path(article_id, channel)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(draft, indent=2, ensure_ascii=False) + "\n")
+    path.write_text(json.dumps(draft, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
 
 
@@ -74,7 +76,7 @@ def read_draft(article_id, channel):
     path = draft_path(article_id, channel)
     if not path.exists():
         raise FileNotFoundError(f"No draft at {path}")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def stuck_entry_help(article_id, channel, entry):

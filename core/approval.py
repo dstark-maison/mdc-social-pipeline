@@ -15,7 +15,7 @@ from core import config, http
 
 # The ONLY accepted shape of an approval title. fullmatch(), never match():
 # `$` would accept a trailing newline.
-ACTION_RE = re.compile(r"(approve|reject):[0-9]+:(ig|fb|ig\+fb|pin|reddit)")
+ACTION_RE = re.compile(r"(approve|reject):[0-9]+:(ig|fb|ig\+fb|pin|reddit|story)")
 
 
 def approval_link(action, article_id, channels):
@@ -74,7 +74,7 @@ def pending_section(pending):
             f"newer drafts never replace them.</p><ul>{items}</ul>")
 
 
-def send_draft_email(article, previews, buttons, pending=None):
+def send_draft_email(article, previews, buttons, pending=None, note="", subject_prefix=""):
     """previews: [{label, image_url, text, target, link}], buttons: [(label, action, channels)],
     pending: see pending_section()."""
     e = html.escape
@@ -93,6 +93,7 @@ def send_draft_email(article, previews, buttons, pending=None):
         for label, action, channels in buttons
     )
     body = f"""
+    {note}
     <h2>Review: {e(article['title'])}</h2>
     {blocks}
     <hr>
@@ -102,7 +103,7 @@ def send_draft_email(article, previews, buttons, pending=None):
     collaborator). Nothing publishes on its own.</p>
     {pending_section(pending)}
     """
-    _send(f"Review + Approve: {article['title']}", body)
+    _send(f"{subject_prefix}Review + Approve: {article['title']}", body)
 
 
 def send_failure_email(context, error_text):
