@@ -3,7 +3,7 @@
 ## Open
 
 - **Stories: live API confirmed 2026-11-09.** One neutral test Story (`action=teststory`, id `9269999001`, 4:5 image) was
-  approved and published; the read-back returned a permalink with `media_product_type=STORY`. The owner deleted it by hand.
+  approved and published; the read-back returned a permalink with `media_product_type=STORY`. The owner deletes it by hand in the Instagram app.
   Posts `9261127002`, `9261130003`, `9261208005` stay scheduled (the 20 Nov time-box is met; no `skip` needed). The
   test used a 4:5 image, so the real 1080x1350 images are still unseen as Stories until 27 Nov.
 - Blog drafts get a pending-approvals list that now also shows campaign drafts (and vice versa). Intended.
