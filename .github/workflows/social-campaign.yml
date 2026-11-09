@@ -1,0 +1,65 @@
+# Black Week + Christmas 2026 campaign (campaigns/peak-2026.yml). Idempotent tick, see campaign_run.py:
+#   sweep expired -> bio-link schedule -> draft + ONE confirmation email -> publish posts approved earlier.
+# Never publishes anything that was not approved. Times below are UTC (Europe/Berlin = UTC+1 in Nov/Dec):
+#   06:00 = 07:00 Berlin (drafts + emails)   08:00 / 08:30 = 09:00 / 09:30 Berlin (publish approved posts)
+#   23:05 = 00:05 Berlin (bio link flips at midnight)
+# After 8 Dec 2026 there are no posts left; the 26 Dec bio reset is the last effect, a few days later the
+# job does nothing. The cleanup PR (BACKLOG.md) deletes this file.
+
+name: Social Campaign
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 8 * * *"
+    - cron: "30 8 * * *"
+    - cron: "5 23 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Manual action on ONE post: dryrun (draft + email now, approving is refused before its date) or reset (delete its drafts + ledger entries). Empty = normal tick."
+        required: false
+        type: choice
+        options: ["", dryrun, reset]
+        default: ""
+      post:
+        description: "NUMERIC post id from campaigns/peak-2026.yml (for dryrun / reset)"
+        required: false
+        type: string
+
+permissions:
+  contents: write  # ledger + drafts commits
+
+concurrency:
+  group: social-campaign
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml cryptography
+
+      - name: Campaign tick
+        env:
+          ACCESS_TOKEN: ${{ secrets.META_SYSTEM_USER_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          BIO_LINK_PATH: ${{ secrets.BIO_LINK_PATH }}
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          STOREFRONT_DOMAIN: ${{ secrets.STOREFRONT_DOMAIN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM_IG }}
+          RESEND_TO: ${{ secrets.RESEND_TO }}
+          FORCE_ACTION: ${{ inputs.action }}
+          FORCE_POST: ${{ inputs.post }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python campaign_run.py

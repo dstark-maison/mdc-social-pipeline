@@ -33,7 +33,7 @@ REQUIRED_ENV = [
     "GITHUB_REPOSITORY", "GITHUB_REF_NAME",
 ]
 CHANNELS = (instagram.CODE, facebook.CODE)
-APPROVABLE_COMBOS = ("ig", "fb", "ig+fb")  # what an approval title accepts
+APPROVABLE_COMBOS = ("ig", "fb", "ig+fb", "story")  # what an approval title accepts
 
 
 def select_new_articles(articles, ledger_data, cutoff=None, hold=None):

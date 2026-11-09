@@ -23,17 +23,17 @@ from pathlib import Path
 
 import requests
 
-from core import approval, config, http, ledger, meta, reddit_store
+from core import approval, campaign, config, http, ledger, meta, reddit_store
 from core.approval import ACTION_RE
-from channels import facebook, instagram
+from channels import facebook, instagram, story
 
-CHANNELS = {instagram.CODE: instagram, facebook.CODE: facebook}
+CHANNELS = {instagram.CODE: instagram, facebook.CODE: facebook, story.CODE: story}
 
 REQUIRED_ENV = ["GITHUB_REPOSITORY", "GITHUB_REF_NAME", "RESEND_API_KEY", "RESEND_FROM", "RESEND_TO"]
 IG_ENV = ["ACCESS_TOKEN", "IG_USER_ID", "SHOPIFY_STORE_DOMAIN",
           "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "BIO_LINK_PATH"]
 FB_ENV = ["ACCESS_TOKEN", "IG_USER_ID"]  # IG_USER_ID only identifies the linked Page
-ENV_BY_CHANNEL = {instagram.CODE: IG_ENV, facebook.CODE: FB_ENV}
+ENV_BY_CHANNEL = {instagram.CODE: IG_ENV, facebook.CODE: FB_ENV, story.CODE: IG_ENV}
 
 
 def parse_title(title):
@@ -234,6 +234,32 @@ def do_reddit(question_id):
             f"suggested posting day {weekday} {post_on.isoformat()}"), True
 
 
+def campaign_gate(article_id, entry, now=None):
+    """Campaign posts only (None for blog articles). Returns a (markdown line, ok) to stop with, or
+    None to carry on publishing. Raises Blocked when the post's window is closed or not yet open."""
+    manifest = campaign.load_manifest()
+    post = campaign.find_post(manifest, article_id)
+    if post is None:
+        return None
+    now = now or campaign.now_local(manifest)
+    state = campaign.window_state(post, manifest, now)
+    if state == "too_early":
+        raise Blocked(f"Campaign post {article_id} is for {post['date']}: approving it before that day is refused.")
+    if state == "expired":
+        raise Blocked(f"Campaign post {article_id} was for {post['date']}; that day is over, so it is not published "
+                      f"any more (nothing publishes after 23:59 of its date).")
+    if state == "before_publish_time":
+        at = campaign.publish_at(post, manifest).strftime("%H:%M")
+        if entry["status"] == ledger.DRAFT:
+            def mutate(d):
+                ledger.set_entry(d, article_id, entry["channel_code"], status=ledger.APPROVED,
+                                 approved_at=ledger.now(), timestamp=ledger.now())
+            ledger.update(mutate, f"Campaign {article_id} ({entry['channel_code']}) approved, publishes at {at} [skip ci]")
+            return f"- `{entry['channel_code']}`: approved. It will be published at {at} Berlin time today.", True
+        return f"- `{entry['channel_code']}`: already approved, publishes at {at} Berlin time today.", True
+    return None
+
+
 def do_approve(article_id, channel):
     """Returns (markdown line, ok). Raises on anything that blocks or breaks publishing."""
     if channel == "reddit":
@@ -255,10 +281,18 @@ def do_approve(article_id, channel):
             "it could double-post.\n\n" + ledger.stuck_entry_help(article_id, channel, entry))
     if entry["status"] == ledger.REJECTED:
         raise Blocked("This draft was rejected; it will not be published.")
+    if entry["status"] == ledger.EXPIRED:
+        raise Blocked("This campaign post expired: its day ended without a publish. It will not be published.")
+
+    stop = campaign_gate(article_id, {**entry, "channel_code": channel})
+    if stop:
+        return stop
 
     draft = ledger.read_draft(article_id, channel)
-    # Never use a stored URL: build it from the CURRENT repo name (renames break old ones).
-    draft["image_url"] = config.public_raw_url(draft["image_path"])
+    # Blog drafts: never use a stored URL, build it from the CURRENT repo name (renames break old ones).
+    # Campaign drafts carry a Shopify CDN URL, which does not depend on the repo.
+    if not (draft.get("campaign") and draft.get("image_url")):
+        draft["image_url"] = config.public_raw_url(draft["image_path"])
 
     def mark_publishing(container_id):
         def mutate(d):

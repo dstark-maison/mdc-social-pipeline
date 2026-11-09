@@ -1,0 +1,77 @@
+# Black Week + Christmas 2026 social posts (Instagram + Facebook, German only).
+# Read by campaign_run.py (daily job) and core/campaign.py. Times are Europe/Berlin.
+# Change a single post: edit it here and merge. Cancel one: set `skip: true` (or press Reject in its email).
+campaign: peak-2026
+timezone: Europe/Berlin
+draft_time: "07:00"      # draft + ONE confirmation email on the morning of the post's date
+publish_time: "09:00"    # approved before this -> published at this time; later -> published on approval
+                         # nothing is published after 23:59 of the post's date (the draft is marked `expired`)
+last_post_date: 2026-12-08   # the draft/publish steps do nothing after this date
+
+images:
+  black-week-de:
+    file: mdc-black-week-2026-social-de-1080x1350.jpg
+    url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-black-week-2026-social-de-1080x1350.jpg?v=1794232446
+  christmas-de:
+    file: mdc-christmas-2026-social-de-1080x1350.jpg
+    url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-christmas-2026-social-de-1080x1350.jpg?v=1794232447
+
+# /pages/latest-post (BIO_LINK_PATH) is pointed at these collections for the date range (inclusive).
+# From reset_on the pipeline's normal behaviour (newest published blog post) returns.
+# While a range is active, blog publishes only update the ledger pointer, never the redirect.
+bio_link:
+  ranges:
+    - {from: 2026-11-23, to: 2026-11-30, path: /collections/black-friday}
+    - {from: 2026-12-01, to: 2026-12-25, path: /collections/weihnachtsgeschenke}
+  reset_on: 2026-12-26
+
+posts:
+  - id: "9261123001"        # numeric: approval titles only accept digits
+    date: 2026-11-23
+    type: feed
+    channels: [ig, fb]
+    image: black-week-de
+    fb_link: https://maisondecocon.com/collections/black-friday?utm_source=facebook&utm_medium=social&utm_campaign=bw26
+    caption: |
+      Black Week bei Maison de Cocon.
+
+      Vom 23. bis 30. November: −10% auf VIVARAISE, MoST Blankets und SalesFever, −5% auf Coco & Cici (ausgenommen Ocean Blue). Der Rabatt wird automatisch im Warenkorb abgezogen – nicht mit anderen Rabattcodes kombinierbar.
+
+      Ruhige Nächte, schöne Stoffe. Jetzt etwas leichter zu haben.
+
+      Link in der Bio.
+
+      EN: Black Week, 23–30 Nov – up to −10% on selected brands, applied automatically at checkout.
+
+      #maisondecocon #blackweek #bettwäsche #schlafzimmer #wohnen #interior
+  - id: "9261127002"
+    date: 2026-11-27
+    type: story
+    channels: [story]
+    image: black-week-de
+  - id: "9261130003"
+    date: 2026-11-30
+    type: story
+    channels: [story]
+    image: black-week-de
+  - id: "9261201004"
+    date: 2026-12-01
+    type: feed
+    channels: [ig, fb]
+    image: christmas-de
+    fb_link: https://maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26
+    caption: |
+      Geschenke für ruhige Nächte.
+
+      Bis 25. Dezember: −5% auf VIVARAISE, MoST Blankets, SalesFever und Coco & Cici (ausgenommen Ocean Blue), automatisch im Warenkorb. Bestellen Sie bis zum 10. Dezember für die Lieferung vor Weihnachten.
+
+      Link in der Bio.
+
+      EN: Christmas – −5% on selected brands until 25 Dec. Order by 10 Dec for delivery before Christmas.
+
+      #maisondecocon #weihnachtsgeschenke #geschenkideen #bettwäsche #wohnen #interior
+  - id: "9261208005"
+    date: 2026-12-08
+    type: story
+    channels: [story]
+    image: christmas-de
