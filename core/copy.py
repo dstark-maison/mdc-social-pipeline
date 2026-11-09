@@ -44,11 +44,17 @@ ENV_CLAIM_RE = re.compile(
     re.I,
 )
 _STANDARD_RE = re.compile(r"oeko[- ]?tex|öko[- ]?tex", re.I)
+# The required Instagram CTA ("Link in der Bio", "Link in bio", "Bio-Link") is the profile bio, not "organic":
+# it must not trip the \bbio\b rule, or every caption fails (incident 2026-11-07).
+_BIO_LINK_RE = re.compile(
+    r"\blink\s+(?:in|im)\s+(?:der\s+|unserer\s+|meiner\s+|our\s+|the\s+)?(?:profil-?)?bio\b|\b(?:profil-?)?bio[- ]?link\b",
+    re.I,
+)
 
 
 def find_env_claim(text):
-    """First environmental claim term in `text` (OEKO-TEX name ignored), or None."""
-    m = ENV_CLAIM_RE.search(_STANDARD_RE.sub(" ", text or ""))
+    """First environmental claim term in `text` (OEKO-TEX name and link-in-bio CTA ignored), or None."""
+    m = ENV_CLAIM_RE.search(_BIO_LINK_RE.sub(" ", _STANDARD_RE.sub(" ", text or "")))
     return m.group(0) if m else None
 
 

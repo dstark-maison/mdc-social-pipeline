@@ -19,6 +19,16 @@ class FindEnvClaim(unittest.TestCase):
             # 'Biomasse' must not trip the bio rule (word-boundary), 'economy'/'ecosystem' must not trip eco
             self.assertIsNone(copy.find_env_claim(text), text)
 
+    def test_link_in_bio_cta_is_not_a_claim(self):
+        # regression 2026-11-07: the mandatory CTA tripped the bio rule on every caption
+        for text in ["Mehr dazu: Link in der Bio.", "Den ganzen Artikel findest du über den Link in unserer Bio.",
+                     "Link in bio", "Zum Artikel per Bio-Link.", "Link im Profil-Bio", "#linkinbio"]:
+            self.assertIsNone(copy.find_env_claim(text), text)
+
+    def test_bio_claim_still_caught_next_to_cta(self):
+        self.assertIsNotNone(copy.find_env_claim("Aus Bio-Baumwolle. Link in der Bio."))
+        self.assertIsNotNone(copy.find_env_claim("Bio Bettwäsche – Link in der Bio"))
+
     def test_hashtags_are_checked(self):
         hits = copy.env_claims_in_post({"caption": "Sanft und ruhig.", "hashtags": ["Bettwäsche", "nachhaltig", "Schlafzimmer"]})
         self.assertEqual(hits, [("hashtag #nachhaltig", "nachhaltig")])
