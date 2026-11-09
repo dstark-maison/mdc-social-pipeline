@@ -106,6 +106,9 @@ Images are Shopify Files CDN URLs (stored in the manifest), not repo files.
   (only if the draft already exists and nothing is published); the next tick drafts it again on its day.
 - **Dry run**: *Run workflow* with `action=dryrun`, `post=<id>` sends the real email marked DRY RUN (approving is refused until
   the date); `action=reset` removes it again.
+- **Test Story**: `action=teststory` drafts the manifest's `test_story` (one neutral image, no text, not part of the
+  schedule) and emails it as `[TEST STORY]`. Approve = it goes live at once; delete it by hand in the Instagram app.
+  `action=reset`, `post=<its id>` clears a failed attempt.
 - **Ends**: the cleanup PR (BACKLOG.md) deletes the workflow; merge it on 28 Dec.
 
 ## Drafts stay approvable indefinitely

@@ -25,6 +25,14 @@ bio_link:
     - {from: 2026-12-01, to: 2026-12-25, path: /collections/weihnachtsgeschenke}
   reset_on: 2026-12-26
 
+
+# One-off Story to prove the Story channel against the live API (action `teststory` in the
+# Social Campaign workflow). NOT in `posts`: the daily job never drafts, publishes or expires it.
+# Approve in the email -> publishes at once. Delete the Story by hand in the Instagram app afterwards.
+test_story:
+  id: "9269999001"
+  image_url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-test-story-neutral-bedroom-800x1000.jpg?v=1794241352
+
 posts:
   - id: "9261123001"        # numeric: approval titles only accept digits
     date: 2026-11-23

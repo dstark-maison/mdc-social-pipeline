@@ -17,10 +17,10 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Manual action on ONE post: dryrun (draft + email now, approving is refused before its date) or reset (delete its drafts + ledger entries). Empty = normal tick."
+        description: "Manual action on ONE post: dryrun (draft + email now, approving is refused before its date) or reset (delete its drafts + ledger entries), or teststory (one neutral test Story: draft + email, published only after you approve). Empty = normal tick."
         required: false
         type: choice
-        options: ["", dryrun, reset]
+        options: ["", dryrun, reset, teststory]
         default: ""
       post:
         description: "NUMERIC post id from campaigns/peak-2026.yml (for dryrun / reset)"

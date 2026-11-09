@@ -440,3 +440,47 @@ class Runner(tp.InTmp):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStory(Runner):
+    """One-off live test of the Story channel: outside `posts`, approval publishes at once."""
+    TID = "9269999001"
+
+    def test_manifest_block_and_draft(self):
+        self.assertEqual(campaign.test_story_id(M), self.TID)
+        self.assertNotIn(self.TID, [str(p["id"]) for p in M["posts"]])
+        d = campaign.build_test_story_draft(M)
+        self.assertEqual((d["channel"], d["article_id"]), ("story", self.TID))
+        self.assertTrue(d["image_url"].startswith("https://cdn.shopify.com/"))
+        self.assertNotIn("caption", d)
+
+    def test_draft_sends_one_email_with_approve_and_reject_and_is_not_touched_by_the_daily_job(self):
+        with mock.patch.object(campaign_run.meta, "preflight"):
+            campaign_run.draft_test_story(M)
+        (pid, kw), = self.emails
+        self.assertEqual(pid, self.TID)
+        self.assertEqual([b[1:] for b in kw["buttons"]], [("approve", "story"), ("reject", "story")])
+        self.assertEqual(kw["subject_prefix"], "[TEST STORY] ")
+        self.assertEqual(ledger.load()[self.TID]["story"]["email_sent"], True)
+        self.tick(at(2026, 12, 3, 12))                   # daily job: no second email, no expiry, no publish
+        self.assertEqual(len(self.emails), 1)
+        self.assertEqual(ledger.load()[self.TID]["story"]["status"], ledger.DRAFT)
+        self.assertEqual(self.published, [])
+
+    def test_second_draft_is_refused(self):
+        campaign_run.draft_test_story(M)
+        with self.assertRaises(RuntimeError):
+            campaign_run.draft_test_story(M)
+
+    def test_approval_publishes_immediately_at_any_time(self):
+        campaign_run.draft_test_story(M)
+        fake = mock.Mock()
+        fake.publish.return_value = {"post_id": "9", "url": "https://instagram.com/stories/x", "timestamp": "t"}
+        fake.after_publish.return_value = None
+        with mock.patch.dict(publish.CHANNELS, {"story": fake}), \
+                mock.patch.object(campaign, "now_local", return_value=at(2026, 11, 10, 15)):
+            line, ok = publish.do_approve(self.TID, "story")
+        self.assertTrue(ok)
+        fake.publish.assert_called_once()
+        self.assertEqual(ledger.load()[self.TID]["story"]["status"], ledger.PUBLISHED)
+        self.assertTrue(fake.publish.call_args[0][0]["image_url"].startswith("https://cdn.shopify.com/"))
