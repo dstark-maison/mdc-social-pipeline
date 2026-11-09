@@ -215,7 +215,7 @@
       "campaign": "peak-2026",
       "container_id": null,
       "dry_run": false,
-      "email_sent": false,
+      "email_sent": true,
       "handle": "peak-2026-teststory",
       "post_id": null,
       "status": "draft",
