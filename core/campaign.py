@@ -122,6 +122,22 @@ def build_drafts(post, m):
     return drafts
 
 
+# --- one-off test Story -----------------------------------------------------
+
+def test_story_id(m):
+    t = m.get("test_story")
+    return str(t["id"]) if t else None
+
+
+def build_test_story_draft(m):
+    """Story draft for the one-off live test (not a scheduled post; no date, no caption)."""
+    t = m["test_story"]
+    pid = str(t["id"])
+    return {"article_id": pid, "handle": f"{m['campaign']}-teststory", "title": "TEST Story (neutral image, delete after)",
+            "campaign": m["campaign"], "published_at": None, "image_url": t["image_url"], "channel": "story",
+            "article_url": t["image_url"], "target": "Instagram Story (@maisondecocon), no caption"}
+
+
 # --- bio link ---------------------------------------------------------------
 
 def override_active(m, today):

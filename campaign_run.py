@@ -9,7 +9,7 @@ Every tick (idempotent, so a late or repeated cron is harmless) does, in this or
   4. publish : posts due today, from publish_time on, that were approved earlier -> publish + read back
 
 Nothing is ever published without an approval. Manual inputs arrive only via env (validated):
-  FORCE_POST   numeric post id          FORCE_ACTION  dryrun | reset
+  FORCE_POST   numeric post id          FORCE_ACTION  dryrun | reset | teststory
   dryrun: draft that post now with a DRY RUN banner (approving it is refused until its date)
   reset : delete a post's drafts + ledger entries (only if none is published/publishing); the
           next tick drafts it again on its day
@@ -143,6 +143,29 @@ def draft_post(m, post, dry=False):
     mark_emailed(pid, send_email(m, post, data, dry))
 
 
+def draft_test_story(m):
+    """One-off live test of the Story channel: draft + ONE email; the normal approval issue publishes it."""
+    pid = campaign.test_story_id(m)
+    if not pid:
+        raise RuntimeError("No test_story in the manifest")
+    if entries(ledger.load(), pid):
+        raise RuntimeError(f"Test story {pid} already exists; reset it first (action=reset, post={pid})")
+    d = campaign.build_test_story_draft(m)
+
+    def mutate(data):
+        ledger.set_entry(data, pid, "story", status=ledger.DRAFT, article_id=pid, handle=d["handle"],
+                         campaign=m["campaign"], post_id=None, url=None, container_id=None,
+                         email_sent=False, dry_run=False, timestamp=ledger.now())
+    data = ledger.update(mutate, f"Draft test story {pid} [skip ci]", {ledger.draft_path(pid, "story"): ledger.draft_text(d)})
+    note = ('<p style="background:#fff3cd;border:1px solid #e0c36a;padding:8px 12px;font-family:sans-serif">'
+            "<strong>TEST STORY.</strong> One neutral image, no text, no campaign content. Approve = it goes live on "
+            "@maisondecocon right away (not scheduled). Delete it by hand in the Instagram app afterwards.</p>")
+    approval.send_draft_email({"title": d["title"], "article_id": pid},
+                              previews=[preview("story", d)], buttons=buttons_for(["story"]),
+                              pending=pending_for_email(data, pid), note=note, subject_prefix="[TEST STORY] ")
+    mark_emailed(pid, ["story"])
+
+
 def run_drafts(m, now):
     done = []
     if now < campaign.draft_due(m, now):
@@ -219,9 +242,15 @@ def main():
     m = campaign.load_manifest()
     now = campaign.now_local(m)
     force_post, force_action = os.environ.get("FORCE_POST", "").strip(), os.environ.get("FORCE_ACTION", "").strip()
+    if force_action == "teststory":
+        ledger.git_identity()
+        meta.preflight(meta.scopes_for(["story"]))
+        draft_test_story(m)
+        print(f"test story {campaign.test_story_id(m)}: draft + email sent")
+        return
     if force_action:
-        if force_action not in ("dryrun", "reset") or not re.fullmatch(r"[0-9]+", force_post) \
-                or not campaign.find_post(m, force_post):
+        known = campaign.find_post(m, force_post) or (force_post == campaign.test_story_id(m) and force_action == "reset")
+        if force_action not in ("dryrun", "reset") or not re.fullmatch(r"[0-9]+", force_post) or not known:
             print(f"Rejected manual input: action={force_action!r} post={force_post!r}")
             sys.exit(1)
         post = campaign.find_post(m, force_post)
