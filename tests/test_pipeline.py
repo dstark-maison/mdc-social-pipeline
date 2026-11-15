@@ -294,5 +294,47 @@ class InstagramPublish(unittest.TestCase):
         self.assertNotIn("image_url", d)  # built from the current repo name when needed
 
 
+class ApprovalRobustness(InTmp):
+    def test_workflow_trusts_author_and_title_not_the_label(self):
+        import yaml
+        wf = yaml.safe_load((Path(__file__).resolve().parent.parent / ".github" / "workflows"
+                             / "social-publish.yml").read_text(encoding="utf-8"))
+        cond = wf["jobs"]["publish"]["if"]
+        self.assertNotIn("labels", cond)
+        for needle in ("startsWith(github.event.issue.title, 'approve:')",
+                       "startsWith(github.event.issue.title, 'reject:')",
+                       "author_association == 'OWNER'", "author_association == 'COLLABORATOR'"):
+            self.assertIn(needle, cond)
+        # one group per issue: duplicate same-title issues must not cancel each other's pending run
+        self.assertNotIn("issue.title", wf["concurrency"]["group"])
+        self.assertIn("issue.number", wf["concurrency"]["group"])
+
+    def test_second_run_cannot_claim_a_draft_another_run_already_took(self):
+        ledger.save({ID: {"fb": {"status": "draft", "article_id": ID, "handle": "h"}}})
+        ledger.write_draft(ID, "fb", {"message": "m", "image_path": "generated/x.jpg"})
+
+        def racing_publish(draft_, mark, revert):
+            # a concurrent run claims the draft between our check and our claim
+            data = ledger.load()
+            data[ID]["fb"]["status"] = "publishing"
+            ledger.save(data)
+            mark(None)
+
+        fake = mock.Mock()
+        fake.publish.side_effect = racing_publish
+        with mock.patch.dict(publish.CHANNELS, {"fb": fake}):
+            with self.assertRaises(publish.Blocked) as cm:
+                publish.do_approve(ID, "fb")
+        self.assertIn("Another run already took", str(cm.exception))
+
+    def test_instagram_container_is_created_at_publish_time_so_late_approvals_work(self):
+        env = {"ACCESS_TOKEN": "t" * 12, "IG_USER_ID": "1"}
+        order = []
+        with mock.patch.dict(os.environ, env),                 mock.patch.object(instagram, "create_container", side_effect=lambda d: order.append("create") or "c1"),                 mock.patch.object(instagram, "wait_until_ready"),                 mock.patch.object(instagram, "verify", return_value={"permalink": "p", "timestamp": "t"}),                 mock.patch.object(http, "request") as req:
+            req.return_value.json.return_value = {"id": "9"}
+            instagram.publish({"full_caption": "c", "image_url": "i"}, lambda c: order.append("mark"), lambda: None)
+        self.assertEqual(order, ["create", "mark"])  # fresh container on every publish; none is stored in a draft
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,11 @@
 # Publish stage. Two ways in:
 #   1. An "approval" issue opened from an email button (Approve / Reject).
-#      Only OWNER / COLLABORATOR authors are trusted, and only issues that
-#      carry the "approval" label.
+#      Trust = the issue AUTHOR is OWNER / COLLABORATOR and the title starts
+#      with "approve:" or "reject:". The "approval" label is NOT required (a
+#      prefilled-label link is silently dropped by GitHub in some cases, which
+#      made owner approvals skip with no notice). publish.py's ACTION_RE
+#      fullmatch stays the real validator: a trusted issue with a malformed
+#      title fails loudly (issue comment + closed + failed run).
 #   2. workflow_dispatch (manual re-run, or the forced-error test).
 #
 # SECURITY: issue text and dispatch inputs reach the script ONLY through the
@@ -40,8 +44,12 @@ permissions:
   issues: write    # comment + close the approval issue
   actions: read    # Reddit: download the (encrypted) draft artifact
 
+# One group PER ISSUE, never per title: GitHub keeps only ONE pending run per
+# group and silently cancels the older pending ones, so duplicate issues with
+# the same title used to vanish without a comment. Double-posting is prevented
+# in publish.py instead (compare-and-swap on the ledger before the publish call).
 concurrency:
-  group: social-publish-${{ github.event.issue.title || format('{0}:{1}', inputs.article, inputs.channel) }}
+  group: social-publish-${{ github.event.issue.number && format('issue-{0}', github.event.issue.number) || format('{0}:{1}', inputs.article, inputs.channel) }}
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (contains(github.event.issue.labels.*.name, 'approval') &&
+      ((startsWith(github.event.issue.title, 'approve:') ||
+        startsWith(github.event.issue.title, 'reject:')) &&
        (github.event.issue.author_association == 'OWNER' ||
         github.event.issue.author_association == 'COLLABORATOR'))
     steps:

@@ -296,6 +296,12 @@ def do_approve(article_id, channel):
 
     def mark_publishing(container_id):
         def mutate(d):
+            # Compare-and-swap: ledger.update re-applies this on freshly synced state after a rejected
+            # push, so of two concurrent runs for the same draft only one can claim it.
+            current = (ledger.get(d, article_id, channel) or {}).get("status")
+            if current not in (ledger.DRAFT, ledger.APPROVED):
+                raise Blocked(f"Another run already took this draft (status is now `{current}`); "
+                              f"not publishing a second time.")
             ledger.set_entry(d, article_id, channel, status=ledger.PUBLISHING,
                              container_id=container_id, timestamp=ledger.now())
         ledger.update(mutate, f"Publishing {article_id} ({channel}) [skip ci]")
