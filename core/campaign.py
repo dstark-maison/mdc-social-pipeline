@@ -83,10 +83,10 @@ def image_url(post, m):
     return m["images"][post["image"]]["url"]
 
 
-def facebook_message(caption, link):
+def facebook_message(caption, link, cta="Zum Angebot:"):
     if caption.count(BIO_CTA) != 1:
         raise ValueError(f"Caption must contain {BIO_CTA!r} exactly once to be replaced for Facebook")
-    return caption.replace(BIO_CTA, f"Zum Angebot: {link}")
+    return caption.replace(BIO_CTA, f"{cta} {link}")
 
 
 def bio_path_for(post, m):
@@ -112,7 +112,7 @@ def build_drafts(post, m):
                           "article_url": link, "target": "Instagram feed (@maisondecocon)"}
         elif ch == "fb":
             fb_link = post["fb_link"]
-            drafts[ch] = {**base, "channel": "fb", "message": facebook_message(post["caption"].rstrip("\n"), fb_link),
+            drafts[ch] = {**base, "channel": "fb", "message": facebook_message(post["caption"].rstrip("\n"), fb_link, post.get("fb_cta", "Zum Angebot:")),
                           "article_url": fb_link, "target": "Facebook Page (Maison de Cocon)"}
         elif ch == "story":
             drafts[ch] = {**base, "channel": "story", "article_url": link,

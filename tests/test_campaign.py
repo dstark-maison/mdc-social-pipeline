@@ -47,8 +47,12 @@ class Manifest(unittest.TestCase):
         self.assertTrue(a.startswith("Black Week bei Maison de Cocon.\n\nVom 23. bis 30. November: −10% auf VIVARAISE"))
         self.assertIn("nicht mit anderen Rabattcodes kombinierbar.\n\nRuhige Nächte, schöne Stoffe. Jetzt etwas leichter zu haben.\n\nLink in der Bio.\n\nEN: Black Week, 23–30 Nov", a)
         self.assertTrue(a.rstrip().endswith("#maisondecocon #blackweek #bettwäsche #schlafzimmer #wohnen #interior"))
-        self.assertTrue(b.startswith("Geschenke für ruhige Nächte.\n\nBis 25. Dezember: −5% auf VIVARAISE"))
-        self.assertIn("Bestellen Sie bis zum 10. Dezember für die Lieferung vor Weihnachten.\n\nLink in der Bio.", b)
+        self.assertEqual(b.split("\n\n#")[0], (
+            "Geschenke für ruhige Nächte.\n\n"
+            "Bestellen Sie bis zum 10. Dezember für die Lieferung vor Weihnachten. Mit dem Code COCON5 erhalten Sie 5% auf Produkte von Boomba Bamboo.\n\n"
+            "Link in der Bio.\n\n"
+            "EN: Order by 10 Dec for delivery before Christmas. Code COCON5: 5% off Boomba Bamboo."))
+        self.assertNotIn("−5%", b)
         self.assertTrue(b.rstrip().endswith("#maisondecocon #weihnachtsgeschenke #geschenkideen #bettwäsche #wohnen #interior"))
 
     def test_stories_have_no_caption(self):
@@ -92,8 +96,17 @@ class Drafts(unittest.TestCase):
         self.assertTrue(d["fb"]["image_url"].startswith("https://cdn.shopify.com/"))
 
     def test_christmas_facebook_link(self):
-        fb = campaign.build_drafts(post(P4), M)["fb"]["message"]
-        self.assertIn("https://maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26", fb)
+        d = campaign.build_drafts(post(P4), M)
+        fb = d["fb"]["message"]
+        self.assertIn("Zum Shop: https://www.maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26", fb)
+        self.assertNotIn("Bio", fb)
+        self.assertEqual(fb.replace("Zum Shop: " + post(P4)["fb_link"], "Link in der Bio."), d["ig"]["full_caption"])
+
+    def test_christmas_image_is_the_v3_file_and_bio_link_schedule(self):
+        self.assertIn("social-v3-de-1080x1350.jpg", M["images"]["christmas-de"]["url"])
+        self.assertEqual(campaign.bio_decision(M, date(2026, 11, 23)), ("campaign", "/collections/black-friday"))
+        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 1)), ("campaign", "/collections/weihnachtsgeschenke"))
+        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 26)), ("reset", None))
 
     def test_story_draft_has_image_and_no_caption(self):
         d = campaign.build_drafts(post(P2), M)["story"]

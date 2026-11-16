@@ -13,8 +13,8 @@ images:
     file: mdc-black-week-2026-social-de-1080x1350.jpg
     url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-black-week-2026-social-de-1080x1350.jpg?v=1794232446
   christmas-de:
-    file: mdc-christmas-2026-social-de-1080x1350.jpg
-    url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-christmas-2026-social-de-1080x1350.jpg?v=1794232447
+    file: mdc-christmas-2026-social-v3-de-1080x1350.jpg
+    url: https://cdn.shopify.com/s/files/1/0884/0278/8685/files/mdc-christmas-2026-social-v3-de-1080x1350.jpg?v=1794833934
 
 # /pages/latest-post (BIO_LINK_PATH) is pointed at these collections for the date range (inclusive).
 # From reset_on the pipeline's normal behaviour (newest published blog post) returns.
@@ -67,15 +67,16 @@ posts:
     type: feed
     channels: [ig, fb]
     image: christmas-de
-    fb_link: https://maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26
+    fb_cta: "Zum Shop:"     # Facebook replaces "Link in der Bio." with this + fb_link (default "Zum Angebot:")
+    fb_link: https://www.maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26
     caption: |
       Geschenke für ruhige Nächte.
 
-      Bis 25. Dezember: −5% auf VIVARAISE, MoST Blankets, SalesFever und Coco & Cici (ausgenommen Ocean Blue), automatisch im Warenkorb. Bestellen Sie bis zum 10. Dezember für die Lieferung vor Weihnachten.
+      Bestellen Sie bis zum 10. Dezember für die Lieferung vor Weihnachten. Mit dem Code COCON5 erhalten Sie 5% auf Produkte von Boomba Bamboo.
 
       Link in der Bio.
 
-      EN: Christmas – −5% on selected brands until 25 Dec. Order by 10 Dec for delivery before Christmas.
+      EN: Order by 10 Dec for delivery before Christmas. Code COCON5: 5% off Boomba Bamboo.
 
       #maisondecocon #weihnachtsgeschenke #geschenkideen #bettwäsche #wohnen #interior
   - id: "9261208005"
