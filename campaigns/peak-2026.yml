@@ -22,10 +22,7 @@ images:
 bio_link:
   ranges:
     - {from: 2026-11-23, to: 2026-11-30, path: /collections/black-friday}
-    # Homepage for now ("/" is what Shopify stores for the bare domain, so the redirect read-back matches).
-    # To point it back at the Christmas collection once it no longer shows the old -5% offer: change `path: /` below
-    # to `path: /collections/weihnachtsgeschenke` (this line, nothing else) and merge before 1 Dec.
-    - {from: 2026-12-01, to: 2026-12-25, path: /}
+    - {from: 2026-12-01, to: 2026-12-25, path: /collections/weihnachtsgeschenke}
   reset_on: 2026-12-26
 
 
@@ -71,7 +68,7 @@ posts:
     channels: [ig, fb]
     image: christmas-de
     fb_cta: "Zum Shop:"     # Facebook replaces "Link in der Bio." with this + fb_link (default "Zum Angebot:")
-    fb_link: https://www.maisondecocon.com/?utm_source=facebook&utm_medium=social&utm_campaign=xm26
+    fb_link: https://www.maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26
     caption: |
       Geschenke für ruhige Nächte.
 

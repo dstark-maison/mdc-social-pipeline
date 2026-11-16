@@ -98,15 +98,15 @@ class Drafts(unittest.TestCase):
     def test_christmas_facebook_link(self):
         d = campaign.build_drafts(post(P4), M)
         fb = d["fb"]["message"]
-        self.assertIn("Zum Shop: https://www.maisondecocon.com/?utm_source=facebook&utm_medium=social&utm_campaign=xm26", fb)
+        self.assertIn("Zum Shop: https://www.maisondecocon.com/collections/weihnachtsgeschenke?utm_source=facebook&utm_medium=social&utm_campaign=xm26", fb)
         self.assertNotIn("Bio", fb)
         self.assertEqual(fb.replace("Zum Shop: " + post(P4)["fb_link"], "Link in der Bio."), d["ig"]["full_caption"])
 
-    def test_christmas_image_is_the_v3_file_and_bio_link_is_the_homepage(self):
+    def test_christmas_image_is_the_v3_file_and_bio_link_schedule(self):
         self.assertIn("social-v3-de-1080x1350.jpg", M["images"]["christmas-de"]["url"])
-        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 1)), ("campaign", "/"))
-        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 25)), ("campaign", "/"))
         self.assertEqual(campaign.bio_decision(M, date(2026, 11, 23)), ("campaign", "/collections/black-friday"))
+        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 1)), ("campaign", "/collections/weihnachtsgeschenke"))
+        self.assertEqual(campaign.bio_decision(M, date(2026, 12, 26)), ("reset", None))
 
     def test_story_draft_has_image_and_no_caption(self):
         d = campaign.build_drafts(post(P2), M)["story"]
@@ -126,8 +126,8 @@ class BioSchedule(unittest.TestCase):
         self.assertEqual(d(2026, 11, 22), ("none", None))
         self.assertEqual(d(2026, 11, 23), ("campaign", "/collections/black-friday"))
         self.assertEqual(d(2026, 11, 30), ("campaign", "/collections/black-friday"))
-        self.assertEqual(d(2026, 12, 1), ("campaign", "/"))   # homepage while the Christmas collection still shows the old offer
-        self.assertEqual(d(2026, 12, 25), ("campaign", "/"))
+        self.assertEqual(d(2026, 12, 1), ("campaign", "/collections/weihnachtsgeschenke"))
+        self.assertEqual(d(2026, 12, 25), ("campaign", "/collections/weihnachtsgeschenke"))
         self.assertEqual(d(2026, 12, 26), ("reset", None))
         self.assertEqual(d(2026, 12, 29), ("reset", None))
         self.assertEqual(d(2026, 12, 30), ("none", None))   # the job has stopped by itself
