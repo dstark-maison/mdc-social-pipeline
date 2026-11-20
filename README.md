@@ -84,7 +84,7 @@ tracks, you post by hand.
 
 ## Campaign: Black Week + Christmas 2026 (`campaigns/peak-2026.yml`)
 
-Five German posts (Instagram + Facebook feed on 23 Nov and 1 Dec, Instagram Stories on 27 Nov, 30 Nov, 8 Dec) go through the
+Five German posts (Instagram + Facebook feed on 20 Nov (17:15 via the per-post `publish_time`; held with `skip: true` until the new image is uploaded) and 1 Dec, Instagram Stories on 27 Nov, 30 Nov, 8 Dec) go through the
 normal draft -> email -> approval issue -> publish flow, driven by the manifest instead of a blog article.
 Images are Shopify Files CDN URLs (stored in the manifest), not repo files.
 

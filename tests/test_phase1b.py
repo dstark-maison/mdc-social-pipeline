@@ -6,11 +6,13 @@ import os
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 import draft
 import publish
-from core import approval, http, ledger, meta
+from core import approval, campaign, http, ledger, meta
 from channels import instagram
 from tests import test_pipeline as tp
 
@@ -129,7 +131,9 @@ class BioLinkLatestPublish(tp.InTmp):
             redirects.append(url)
             return {"path": "/pages/latest-post", "target": url}
 
+        # pin the clock outside the campaign bio-link override ranges (Black Week / Christmas), or these tests flip with the real date
         with mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(campaign, "now_local", return_value=datetime(2026, 10, 1, 10, 0, tzinfo=ZoneInfo("Europe/Berlin"))), \
                 mock.patch.object(instagram, "publish",
                                   return_value={"post_id": "9", "url": "https://ig/p/9", "timestamp": published}), \
                 mock.patch.object(instagram, "update_bio_redirect", side_effect=set_redirect), \
