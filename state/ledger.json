@@ -411,6 +411,7 @@
   },
   "9261123001": {
     "fb": {
+      "approved_at": "2026-11-20T11:37:40+00:00",
       "article_id": "9261123001",
       "campaign": "peak-2026",
       "container_id": null,
@@ -418,8 +419,8 @@
       "email_sent": true,
       "handle": "peak-2026-9261123001",
       "post_id": null,
-      "status": "draft",
-      "timestamp": "2026-11-20T11:36:29+00:00",
+      "status": "approved",
+      "timestamp": "2026-11-20T11:37:40+00:00",
       "url": null
     },
     "ig": {
