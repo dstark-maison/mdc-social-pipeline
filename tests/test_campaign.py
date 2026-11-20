@@ -529,10 +529,10 @@ class TestStory(Runner):
 class RealManifest(unittest.TestCase):
     """The live manifest after the 2026-11-20 start move (Black Week 20 Nov 16:30)."""
 
-    def test_first_post_is_on_20_nov_at_17_15_and_held(self):
+    def test_first_post_is_on_20_nov_at_16_55_released(self):
         p = campaign.find_post(REAL, P1)
         self.assertEqual(p["date"], date(2026, 11, 20))
-        self.assertEqual(p["publish_time"], "17:15")
+        self.assertEqual(p["publish_time"], "16:55")
         self.assertFalse(p.get("skip"))   # released: new 20.-30. Nov / -40% image uploaded 2026-11-20
         self.assertIn("Vom 20. bis 30. November: bis zu −40%", p["caption"])
         self.assertIn("Hybrid-Matratze 18 cm", p["caption"])
@@ -542,9 +542,9 @@ class RealManifest(unittest.TestCase):
 
     def test_per_post_publish_time_overrides_the_campaign_one(self):
         p = campaign.find_post(REAL, P1)
-        self.assertEqual(campaign.publish_at(p, REAL), at(2026, 11, 20, 17, 15))
-        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 17, 14)), "before_publish_time")
-        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 17, 15)), "open")
+        self.assertEqual(campaign.publish_at(p, REAL), at(2026, 11, 20, 16, 55))
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 16, 54)), "before_publish_time")
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 16, 55)), "open")
         self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 21, 0, 0)), "expired")
         # posts without their own time keep the campaign-wide 09:00
         p4 = campaign.find_post(REAL, P4)

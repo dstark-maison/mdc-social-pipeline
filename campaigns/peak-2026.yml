@@ -36,7 +36,7 @@ test_story:
 posts:
   - id: "9261123001"        # numeric: approval titles only accept digits
     date: 2026-11-20          # Black Week start moved 23 Nov -> 20 Nov 16:30 (2026-11-20)
-    publish_time: "17:15"     # per-post override of the campaign publish_time
+    publish_time: "16:55"     # per-post override of the campaign publish_time (moved from 17:15 on 2026-11-20: owner asked to go live now)
     type: feed
     channels: [ig, fb]
     image: black-week-de
