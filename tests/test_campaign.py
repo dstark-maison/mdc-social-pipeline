@@ -13,8 +13,35 @@ from channels import instagram, story
 from tests import test_pipeline as tp
 
 BERLIN = ZoneInfo("Europe/Berlin")
-M = campaign.load_manifest()
-P1, P2, P3, P4, P5 = (str(p["id"]) for p in M["posts"])
+REAL = campaign.load_manifest()   # the live manifest (Black Week post moved to 20 Nov 17:15, held)
+P1, P2, P3, P4, P5 = (str(p["id"]) for p in REAL["posts"])
+
+
+def _baseline(real):
+    """Fixture for the generic engine tests: the original 23 Nov / 09:00 shape of the first post, not held.
+    The real manifest's values are asserted separately in RealManifest."""
+    posts = []
+    for p in real["posts"]:
+        if str(p["id"]) == P1:
+            p = {k: v for k, v in p.items() if k not in ("skip", "publish_time")}
+            p["date"] = date(2026, 11, 23)
+            p["caption"] = p["caption"].replace("20. bis 30. November", "23. bis 30. November").replace("20–30 Nov", "23–30 Nov")
+        posts.append(p)
+    bio = dict(real["bio_link"])
+    bio["ranges"] = [dict(r, **{"from": date(2026, 11, 23)}) if i == 0 else r for i, r in enumerate(bio["ranges"])]
+    return dict(real, posts=posts, bio_link=bio)
+
+
+M = _baseline(REAL)
+_patch = mock.patch.object(campaign, "load_manifest", return_value=M)
+
+
+def setUpModule():
+    _patch.start()
+
+
+def tearDownModule():
+    _patch.stop()
 
 
 def at(y, mo, d, h=0, mi=0):
@@ -497,3 +524,35 @@ class TestStory(Runner):
         fake.publish.assert_called_once()
         self.assertEqual(ledger.load()[self.TID]["story"]["status"], ledger.PUBLISHED)
         self.assertTrue(fake.publish.call_args[0][0]["image_url"].startswith("https://cdn.shopify.com/"))
+
+
+class RealManifest(unittest.TestCase):
+    """The live manifest after the 2026-11-20 start move (Black Week 20 Nov 16:30)."""
+
+    def test_first_post_is_on_20_nov_at_17_15_and_held(self):
+        p = campaign.find_post(REAL, P1)
+        self.assertEqual(p["date"], date(2026, 11, 20))
+        self.assertEqual(p["publish_time"], "17:15")
+        self.assertTrue(p.get("skip"))   # remove together with uploading the new 20.-30. image
+        self.assertIn("Vom 20. bis 30. November", p["caption"])
+        self.assertIn("EN: Black Week, 20–30 Nov", p["caption"])
+        self.assertNotIn("23", p["caption"])
+
+    def test_per_post_publish_time_overrides_the_campaign_one(self):
+        p = campaign.find_post(REAL, P1)
+        self.assertEqual(campaign.publish_at(p, REAL), at(2026, 11, 20, 17, 15))
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 17, 14)), "before_publish_time")
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 20, 17, 15)), "open")
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 21, 0, 0)), "expired")
+        # posts without their own time keep the campaign-wide 09:00
+        p4 = campaign.find_post(REAL, P4)
+        self.assertEqual(campaign.publish_at(p4, REAL), at(2026, 12, 1, 9, 0))
+
+    def test_bio_link_range_starts_20_nov(self):
+        self.assertEqual(campaign.bio_decision(REAL, date(2026, 11, 19)), ("none", None))
+        self.assertEqual(campaign.bio_decision(REAL, date(2026, 11, 20)), ("campaign", "/collections/black-friday"))
+
+    def test_a_held_post_is_not_drafted(self):
+        with mock.patch.object(campaign_run.meta, "preflight"):
+            self.assertEqual(campaign_run.run_drafts(REAL, at(2026, 11, 20, 12, 0)), [])
+

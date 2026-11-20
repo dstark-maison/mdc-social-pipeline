@@ -21,7 +21,7 @@ images:
 # While a range is active, blog publishes only update the ledger pointer, never the redirect.
 bio_link:
   ranges:
-    - {from: 2026-11-23, to: 2026-11-30, path: /collections/black-friday}
+    - {from: 2026-11-20, to: 2026-11-30, path: /collections/black-friday}
     - {from: 2026-12-01, to: 2026-12-25, path: /collections/weihnachtsgeschenke}
   reset_on: 2026-12-26
 
@@ -35,7 +35,9 @@ test_story:
 
 posts:
   - id: "9261123001"        # numeric: approval titles only accept digits
-    date: 2026-11-23
+    date: 2026-11-20          # Black Week start moved 23 Nov -> 20 Nov 16:30 (2026-11-20)
+    publish_time: "17:15"     # per-post override of the campaign publish_time
+    skip: true                # HOLD until the new image (dates 20.-30. Nov) is uploaded; then remove this line
     type: feed
     channels: [ig, fb]
     image: black-week-de
@@ -43,13 +45,13 @@ posts:
     caption: |
       Black Week bei Maison de Cocon.
 
-      Vom 23. bis 30. November: −10% auf VIVARAISE, MoST Blankets und SalesFever, −5% auf Coco & Cici (ausgenommen Ocean Blue). Der Rabatt wird automatisch im Warenkorb abgezogen – nicht mit anderen Rabattcodes kombinierbar.
+      Vom 20. bis 30. November: −10% auf VIVARAISE, MoST Blankets und SalesFever, −5% auf Coco & Cici (ausgenommen Ocean Blue). Der Rabatt wird automatisch im Warenkorb abgezogen – nicht mit anderen Rabattcodes kombinierbar.
 
       Ruhige Nächte, schöne Stoffe. Jetzt etwas leichter zu haben.
 
       Link in der Bio.
 
-      EN: Black Week, 23–30 Nov – up to −10% on selected brands, applied automatically at checkout.
+      EN: Black Week, 20–30 Nov – up to −10% on selected brands, applied automatically at checkout.
 
       #maisondecocon #blackweek #bettwäsche #schlafzimmer #wohnen #interior
   - id: "9261127002"

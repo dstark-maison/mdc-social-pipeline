@@ -59,7 +59,8 @@ def draft_due(m, now):
 
 
 def publish_at(post, m):
-    return datetime.combine(post["date"], _hm(m["publish_time"]), tzinfo=tz(m))
+    # a post may carry its own `publish_time` ("HH:MM"); otherwise the campaign-wide one applies
+    return datetime.combine(post["date"], _hm(post.get("publish_time") or m["publish_time"]), tzinfo=tz(m))
 
 
 def window_state(post, m, now):

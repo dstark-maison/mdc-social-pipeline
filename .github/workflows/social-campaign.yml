@@ -14,6 +14,7 @@ on:
     - cron: "0 8 * * *"
     - cron: "30 8 * * *"
     - cron: "5 23 * * *"
+    - cron: "20 16 20 11 *"   # one-off 2026-11-20 17:20 Berlin: publishes the 17:15 Black Week start post (approved earlier)
   workflow_dispatch:
     inputs:
       action:
