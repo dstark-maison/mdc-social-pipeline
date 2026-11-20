@@ -70,9 +70,9 @@ class Manifest(unittest.TestCase):
             self.assertIn(img["file"], img["url"])
 
     def test_captions_are_exact(self):
-        a, b = post(P1)["caption"], post(P4)["caption"]
-        self.assertTrue(a.startswith("Black Week bei Maison de Cocon.\n\nVom 23. bis 30. November: −10% auf VIVARAISE"))
-        self.assertIn("nicht mit anderen Rabattcodes kombinierbar.\n\nRuhige Nächte, schöne Stoffe. Jetzt etwas leichter zu haben.\n\nLink in der Bio.\n\nEN: Black Week, 23–30 Nov", a)
+        a, b = campaign.find_post(REAL, P1)["caption"], post(P4)["caption"]
+        self.assertTrue(a.startswith("Black Week bei Maison de Cocon.\n\nVom 20. bis 30. November: bis zu −40% – allen voran die Hybrid-Matratze 18 cm von RIBECO mit −40%. Dazu −10% auf VIVARAISE"))
+        self.assertIn("nicht mit anderen Rabattcodes kombinierbar.\n\nRuhige Nächte, schöne Stoffe. Jetzt etwas leichter zu haben.\n\nLink in der Bio.\n\nEN: Black Week, 20–30 Nov – up to −40%", a)
         self.assertTrue(a.rstrip().endswith("#maisondecocon #blackweek #bettwäsche #schlafzimmer #wohnen #interior"))
         self.assertEqual(b.split("\n\n#")[0], (
             "Geschenke für ruhige Nächte.\n\n"
@@ -533,10 +533,12 @@ class RealManifest(unittest.TestCase):
         p = campaign.find_post(REAL, P1)
         self.assertEqual(p["date"], date(2026, 11, 20))
         self.assertEqual(p["publish_time"], "17:15")
-        self.assertTrue(p.get("skip"))   # remove together with uploading the new 20.-30. image
-        self.assertIn("Vom 20. bis 30. November", p["caption"])
-        self.assertIn("EN: Black Week, 20–30 Nov", p["caption"])
+        self.assertFalse(p.get("skip"))   # released: new 20.-30. Nov / -40% image uploaded 2026-11-20
+        self.assertIn("Vom 20. bis 30. November: bis zu −40%", p["caption"])
+        self.assertIn("Hybrid-Matratze 18 cm", p["caption"])
+        self.assertIn("EN: Black Week, 20–30 Nov – up to −40%", p["caption"])
         self.assertNotIn("23", p["caption"])
+        self.assertIn("v=1795173265", REAL["images"]["black-week-de"]["url"])   # new image, also used by the 27 + 30 Nov Stories
 
     def test_per_post_publish_time_overrides_the_campaign_one(self):
         p = campaign.find_post(REAL, P1)
@@ -552,7 +554,8 @@ class RealManifest(unittest.TestCase):
         self.assertEqual(campaign.bio_decision(REAL, date(2026, 11, 19)), ("none", None))
         self.assertEqual(campaign.bio_decision(REAL, date(2026, 11, 20)), ("campaign", "/collections/black-friday"))
 
-    def test_a_held_post_is_not_drafted(self):
+    def test_a_post_with_skip_is_not_drafted(self):
+        held = dict(REAL, posts=[dict(p, skip=True) if str(p["id"]) == P1 else p for p in REAL["posts"]])
         with mock.patch.object(campaign_run.meta, "preflight"):
-            self.assertEqual(campaign_run.run_drafts(REAL, at(2026, 11, 20, 12, 0)), [])
+            self.assertEqual(campaign_run.run_drafts(held, at(2026, 11, 20, 12, 0)), [])
 
