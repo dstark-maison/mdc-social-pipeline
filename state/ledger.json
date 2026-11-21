@@ -432,6 +432,8 @@
   "9261123001": {
     "fb": {
       "approved_at": "2026-11-20T11:37:40+00:00",
+      "archived_at": "2026-11-21T10:16:12+00:00",
+      "archived_note": "Archived by hand on the platform 2026-11-21 (image/caption carried the general \"bis zu -40%\" claim); replaced by post 9261121006. Do not re-post.",
       "article_id": "9261123001",
       "campaign": "peak-2026",
       "container_id": null,
@@ -439,12 +441,14 @@
       "email_sent": true,
       "handle": "peak-2026-9261123001",
       "post_id": "122123880591418127",
-      "status": "published",
+      "status": "archived",
       "timestamp": "2026-11-20T15:59:50+0000",
       "url": "https://www.facebook.com/photo.php?fbid=122123880591418127&set=a.122122382391418127&type=3"
     },
     "ig": {
       "approved_at": "2026-11-20T11:37:39+00:00",
+      "archived_at": "2026-11-21T10:16:12+00:00",
+      "archived_note": "Archived by hand on the platform 2026-11-21 (image/caption carried the general \"bis zu -40%\" claim); replaced by post 9261121006. Do not re-post.",
       "article_id": "9261123001",
       "campaign": "peak-2026",
       "container_id": "17920679715464795",
@@ -452,7 +456,7 @@
       "email_sent": true,
       "handle": "peak-2026-9261123001",
       "post_id": "17946553539380047",
-      "status": "published",
+      "status": "archived",
       "timestamp": "2026-11-20T15:59:42+0000",
       "url": "https://www.instagram.com/p/Df-CJEuksqJ/"
     }

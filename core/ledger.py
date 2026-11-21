@@ -9,6 +9,8 @@ Statuses:
               retries: re-running could double-post. Needs a manual check.
   published   posted AND read back by id
   rejected    rejected in the approval step
+  archived    campaign posts only: was published, then archived by hand on the platform; kept for the record,
+              never published again (a published post that was withdrawn is NOT reset to draft)
   paused      (Reddit only) parked while the Reddit channel is paused; not published, not rejected
   approved    (Reddit only) approved; the owner posts it by hand and submits the URL -> published
 """
@@ -23,6 +25,7 @@ LEDGER_PATH = Path("state/ledger.json")
 DRAFTS_DIR = Path("state/drafts")
 
 DRAFT, PUBLISHING, PUBLISHED, REJECTED = "draft", "publishing", "published", "rejected"
+ARCHIVED = "archived"  # campaign posts only: published once, archived by hand on the platform; terminal, never re-posted
 EXPIRED = "expired"    # campaign posts only: the post's day ended without a publish; never publishable again
 PAUSED = "paused"      # Reddit only: parked while the channel is paused; neither posted nor rejected
 APPROVED = "approved"  # Reddit only: approved, waiting for the owner to post it manually and send the URL back

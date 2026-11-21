@@ -281,6 +281,8 @@ def do_approve(article_id, channel):
             "it could double-post.\n\n" + ledger.stuck_entry_help(article_id, channel, entry))
     if entry["status"] == ledger.REJECTED:
         raise Blocked("This draft was rejected; it will not be published.")
+    if entry["status"] == ledger.ARCHIVED:
+        raise Blocked("This post was published and later archived on the platform. It will not be published again.")
     if entry["status"] == ledger.EXPIRED:
         raise Blocked("This campaign post expired: its day ended without a publish. It will not be published.")
 
