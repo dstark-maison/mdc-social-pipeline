@@ -14,7 +14,7 @@ from tests import test_pipeline as tp
 
 BERLIN = ZoneInfo("Europe/Berlin")
 REAL = campaign.load_manifest()   # the live manifest (Black Week post moved to 20 Nov 17:15, held)
-P1, P2, P3, P4, P5 = (str(p["id"]) for p in REAL["posts"])
+P1, P2, P3, P4, P5, P6 = (str(p["id"]) for p in REAL["posts"])   # P6 = the 21 Nov replacement for P1 (archived)
 
 
 def _baseline(real):
@@ -53,7 +53,7 @@ def post(pid):
 
 
 class Manifest(unittest.TestCase):
-    def test_five_posts_in_the_agreed_order(self):
+    def test_six_posts_in_the_agreed_order(self):
         got = [(str(p["date"]), p["type"], p["channels"], p["image"]) for p in M["posts"]]
         self.assertEqual(got, [
             ("2026-11-23", "feed", ["ig", "fb"], "black-week-de"),
@@ -61,6 +61,7 @@ class Manifest(unittest.TestCase):
             ("2026-11-30", "story", ["story"], "black-week-de-10"),
             ("2026-12-01", "feed", ["ig", "fb"], "christmas-de"),
             ("2026-12-08", "story", ["story"], "christmas-de"),
+            ("2026-11-21", "feed", ["ig", "fb"], "black-week-de-10"),
         ])
 
     def test_images_are_shopify_cdn_urls_of_the_de_files(self):
@@ -544,6 +545,30 @@ class RealManifest(unittest.TestCase):
         self.assertEqual(campaign.find_post(REAL, P3)["image"], "black-week-de-10")
         self.assertEqual(campaign.find_post(REAL, P1)["image"], "black-week-de")
         self.assertIn("-de-1080x1350-10.jpg", REAL["images"]["black-week-de-10"]["url"])
+
+    def test_replacement_feed_post_for_the_archived_one(self):
+        # 2026-11-21: 9261123001 (image/caption said "bis zu -40%") was archived on IG + FB and replaced by this post
+        p = campaign.find_post(REAL, P6)
+        self.assertEqual((str(p["date"]), p["type"], p["channels"], p["image"]), ("2026-11-21", "feed", ["ig", "fb"], "black-week-de-10"))
+        self.assertIn("bis zu −10% auf ausgewählte Marken", p["caption"])
+        self.assertIn("Hybrid-Matratze 18 cm von RIBECO mit −40%", p["caption"])
+        self.assertIn("Ohne Code.", p["caption"])
+        self.assertIn("EN: Black Week, 20–30 Nov – up to −10% on selected brands", p["caption"])
+        self.assertNotIn("bis zu −40%", p["caption"])
+        self.assertEqual(p["caption"].count(campaign.BIO_CTA), 1)
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 21, 11, 0)), "open")
+        self.assertEqual(campaign.window_state(p, REAL, at(2026, 11, 22, 0, 0)), "expired")
+
+    def test_archived_post_is_terminal_in_the_real_ledger(self):
+        data = ledger.load()
+        for ch in ("ig", "fb"):
+            e = data[P1][ch]
+            self.assertEqual(e["status"], ledger.ARCHIVED)
+            self.assertTrue(e["post_id"] and e["url"])      # kept for the record
+        with self.assertRaises(publish.Blocked) as cm:
+            with mock.patch.object(ledger, "load", return_value=data):
+                publish.do_approve(P1, "ig")
+        self.assertIn("archived", str(cm.exception))
 
     def test_per_post_publish_time_overrides_the_campaign_one(self):
         p = campaign.find_post(REAL, P1)

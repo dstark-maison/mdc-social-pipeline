@@ -90,3 +90,18 @@ posts:
     type: story
     channels: [story]
     image: christmas-de
+  - id: "9261121006"        # replaces 9261123001 (archived on IG + FB 2026-11-21: its image/caption said "bis zu -40%")
+    date: 2026-11-21
+    publish_time: "07:00"     # open all day: published on approval ("now"); nothing is published after 23:59 of the day
+    type: feed
+    channels: [ig, fb]
+    image: black-week-de-10
+    fb_link: https://maisondecocon.com/collections/black-friday?utm_source=facebook&utm_medium=social&utm_campaign=bw26
+    caption: |
+      Black Week bei Maison de Cocon.
+
+      Vom 20. bis 30. November: bis zu −10% auf ausgewählte Marken und die Hybrid-Matratze 18 cm von RIBECO mit −40%. Ohne Code.
+
+      Link in der Bio.
+
+      EN: Black Week, 20–30 Nov – up to −10% on selected brands and the Hybrid Foam Mattress 18 cm from RIBECO at −40%. No code needed.
