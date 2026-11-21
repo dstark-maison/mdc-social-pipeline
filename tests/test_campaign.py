@@ -57,8 +57,8 @@ class Manifest(unittest.TestCase):
         got = [(str(p["date"]), p["type"], p["channels"], p["image"]) for p in M["posts"]]
         self.assertEqual(got, [
             ("2026-11-23", "feed", ["ig", "fb"], "black-week-de"),
-            ("2026-11-27", "story", ["story"], "black-week-de"),
-            ("2026-11-30", "story", ["story"], "black-week-de"),
+            ("2026-11-27", "story", ["story"], "black-week-de-10"),
+            ("2026-11-30", "story", ["story"], "black-week-de-10"),
             ("2026-12-01", "feed", ["ig", "fb"], "christmas-de"),
             ("2026-12-08", "story", ["story"], "christmas-de"),
         ])
@@ -66,7 +66,7 @@ class Manifest(unittest.TestCase):
     def test_images_are_shopify_cdn_urls_of_the_de_files(self):
         for key, img in M["images"].items():
             self.assertTrue(img["url"].startswith("https://cdn.shopify.com/"), key)
-            self.assertIn("-de-1080x1350.jpg", img["file"])
+            self.assertIn("-de-1080x1350", img["file"])
             self.assertIn(img["file"], img["url"])
 
     def test_captions_are_exact(self):
@@ -538,7 +538,12 @@ class RealManifest(unittest.TestCase):
         self.assertIn("Hybrid-Matratze 18 cm", p["caption"])
         self.assertIn("EN: Black Week, 20–30 Nov – up to −40%", p["caption"])
         self.assertNotIn("23", p["caption"])
-        self.assertIn("v=1795173265", REAL["images"]["black-week-de"]["url"])   # new image, also used by the 27 + 30 Nov Stories
+        self.assertIn("v=1795173265", REAL["images"]["black-week-de"]["url"])   # the published feed post keeps the 20 Nov image
+        # 2026-11-21: the Stories use the "bis zu -10%" image (the general -40% claim covered only 3 of ~590 discounted variants)
+        self.assertEqual(campaign.find_post(REAL, P2)["image"], "black-week-de-10")
+        self.assertEqual(campaign.find_post(REAL, P3)["image"], "black-week-de-10")
+        self.assertEqual(campaign.find_post(REAL, P1)["image"], "black-week-de")
+        self.assertIn("-de-1080x1350-10.jpg", REAL["images"]["black-week-de-10"]["url"])
 
     def test_per_post_publish_time_overrides_the_campaign_one(self):
         p = campaign.find_post(REAL, P1)
