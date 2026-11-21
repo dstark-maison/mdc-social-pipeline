@@ -445,13 +445,13 @@
     "ig": {
       "article_id": "9261121006",
       "campaign": "peak-2026",
-      "container_id": null,
+      "container_id": "17920768869464795",
       "dry_run": false,
       "email_sent": true,
       "handle": "peak-2026-9261121006",
       "post_id": null,
-      "status": "draft",
-      "timestamp": "2026-11-21T10:19:08+00:00",
+      "status": "publishing",
+      "timestamp": "2026-11-21T10:21:29+00:00",
       "url": null
     }
   },
